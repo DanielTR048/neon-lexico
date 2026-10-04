@@ -10,6 +10,8 @@ São 100 fases de Cruzadas e 100 de Cascata. Cada fase sorteia cinco temas de um
 
 Nas Cruzadas, selecione uma pista ou toque na grade numerada, digite a resposta e confirme. As casas compartilhadas mostram a mesma letra nas duas palavras. Os espaços pretos separam as respostas como nas revistas. Na Cascata, letras de uma resposta correta aparecem em todas as linhas abaixo.
 
+No celular, tocar em uma casa abre o teclado e mostra a pista selecionada abaixo da grade, junto ao campo de resposta. A pista acompanha a seleção e permanece acima do teclado; tocar novamente em um cruzamento alterna entre horizontal e vertical. Use a seta para recolher o teclado e explorar o tabuleiro. Esse fluxo também está disponível no aplicativo Android.
+
 Cada fase permite **três dicas**. Uma dica revela uma letra e ajuda imediatamente nos cruzamentos; na Cascata, revela todas as ocorrências dessa letra nas linhas inferiores, mesmo antes de resolver a palavra. O limite persiste ao fechar e reabrir o jogo. Dicas e erros afetam estrelas e pontuação; não há vidas ou contagem regressiva. Rejogar uma fase concluída preserva os melhores resultados.
 
 As fases são geradas de forma determinística a partir da campanha: palavras e pistas podem se repetir em fases diferentes. O jogo não usa IA online para montar partidas.

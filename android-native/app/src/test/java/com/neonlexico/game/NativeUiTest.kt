@@ -64,7 +64,7 @@ class NativeUiTest {
             val first = model.state.session!!.puzzle.words.first()
             compose.runOnIdle { model.selectWord(first.id) }
             val partial = first.answer.take(2)
-            compose.onNodeWithContentDescription("Resposta para pista ${first.number}").performScrollTo().performTextReplacement(partial)
+            compose.onNodeWithContentDescription("Resposta para pista ${first.number}").assertIsDisplayed().performTextReplacement(partial)
             compose.runOnIdle {
                 model.onBackground()
                 val reloaded = GameViewModel(model.getApplication()).apply { selectProfile("daniel"); prepare(mode, 1) }
@@ -77,9 +77,9 @@ class NativeUiTest {
             compose.onNodeWithContentDescription("Entrar como Daniel").performClick()
             compose.runOnIdle { model.prepare(mode, 1); model.selectWord(first.id) }
             compose.onNodeWithContentDescription("Resposta para pista ${first.number}").assertTextContains(partial)
-            compose.onNodeWithContentDescription("Resposta para pista ${first.number}").performScrollTo().performTextReplacement(first.answer)
+            compose.onNodeWithContentDescription("Resposta para pista ${first.number}").assertIsDisplayed().performTextReplacement(first.answer)
             compose.onNodeWithContentDescription("Resposta para pista ${first.number}").assertTextContains(first.answer)
-            compose.onNodeWithText("CONECTAR →").performScrollTo().performClick()
+            compose.onNodeWithText("CONECTAR →").assertIsDisplayed().performClick()
             compose.runOnIdle { assertTrue("answer=${first.answer}; active=${model.state.activeWordId}; solved=${model.state.session!!.solved}; mistakes=${model.state.session!!.mistakes}", first.id in model.state.session!!.solved) }
             val before = model.state.session!!
             compose.runOnIdle { model.navigate(Screen.MAP); model.prepare(mode, 1); assertEquals(before.solved, model.state.session!!.solved) }
@@ -113,13 +113,28 @@ class NativeUiTest {
         screenshot("android-settings")
     }
 
+    @Test fun tappingBoardFocusesTheAnswerAndKeepsTheSelectedClueBelowTheGrid() {
+        compose.onNodeWithContentDescription("Entrar como Daniel").performClick()
+        compose.runOnIdle { model.prepare(Mode.CLASSIC, 1) }
+        compose.onNodeWithText("ENTRAR NO CIRCUITO →").performScrollTo().performClick()
+        awaitPlay()
+        val cell = model.state.session!!.puzzle.words.flatMap(Engine::wordCells).minWith(compareBy<Cell> { it.row }.thenBy { it.col })
+        compose.onAllNodes(hasContentDescription("casa ${cell.row},${cell.col},", substring = true)).onFirst().performScrollTo().performClick()
+        compose.waitForIdle()
+        val selected = model.state.session!!.puzzle.words.first { it.id == model.state.activeWordId }
+        compose.onNodeWithContentDescription("Resposta para pista ${selected.number}").assertIsFocused().assertIsDisplayed()
+        compose.onAllNodesWithText(selected.clue).onLast().assertIsDisplayed()
+        compose.runOnIdle { assertEquals(0, model.state.session!!.hints) }
+        screenshot("android-tap-to-type")
+    }
+
     @Test fun onlyThreeHintsCanBeUsedAndConnectedLettersAreVisible() {
         compose.onNodeWithContentDescription("Entrar como Daniel").performClick()
         compose.runOnIdle { model.prepare(Mode.CASCADE, 1) }
         compose.onNodeWithText("ENTRAR NO CIRCUITO →").performScrollTo().performClick()
         awaitPlay()
         repeat(3) { index ->
-            compose.onNodeWithContentDescription("Revelar uma letra, ${3 - index} dicas restantes").performScrollTo().performClick()
+            compose.onNodeWithContentDescription("Revelar uma letra, ${3 - index} dicas restantes").assertIsDisplayed().performClick()
             compose.runOnIdle { assertEquals(index + 1, model.state.session!!.hints) }
         }
         compose.onNodeWithContentDescription("Revelar uma letra, 0 dicas restantes").assertIsNotEnabled()

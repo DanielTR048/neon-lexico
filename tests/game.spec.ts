@@ -2,7 +2,7 @@ async function enterDaniel(page: import("@playwright/test").Page) { const button
 import { test, expect, type Page } from '@playwright/test';
 import type { Mode, SaveData, Session } from '../src/types';
 import { createSave } from '../src/storage';
-import { createSession, generatePuzzle } from '../src/engine';
+import { createSession, generatePuzzle, wordCells } from '../src/engine';
 
 async function state(page: Page): Promise<SaveData> {
   return page.evaluate(() => JSON.parse(localStorage.getItem('neon-lexico:v1')!));
@@ -37,6 +37,35 @@ test('home, navigation, theme search and responsive layout', async ({ page }, te
   await expect(page.locator('.level-button')).toHaveCount(100);
   await expect(page.locator('.level-button:not([disabled])')).toHaveCount(1);
   expect(errors).toEqual([]);
+});
+
+test('tapping crossword cells opens typing with the matching clue and keeps crossings selectable', async ({ page }, testInfo) => {
+  await start(page, 'classic');
+  const session = (await state(page)).sessions['classic:1'];
+  const intersection = session.puzzle.words.flatMap(wordCells).find(cell => session.puzzle.words.filter(word => wordCells(word).some(c => c.key === cell.key)).length === 2)!;
+  const owners = session.puzzle.words.filter(word => wordCells(word).some(cell => cell.key === intersection.key));
+  await page.locator(`[data-cell="${intersection.key}"]`).scrollIntoViewIfNeeded();
+  await page.locator(`[data-cell="${intersection.key}"]`).click();
+  await expect(page.locator('#answer-input')).toBeFocused();
+  const selected = await page.locator('.word-clue.active').getAttribute('data-word');
+  const expected = owners.find(word => word.id === selected)!;
+  await expect(page.locator('#active-clue')).toHaveText(expected.clue);
+  expect((await state(page)).sessions['classic:1'].hints).toBe(0);
+  await expect(page.locator('.word-editor.editing')).toBeVisible();
+  await expect(page.locator('.keyboard')).toBeVisible();
+  if (testInfo.project.name === 'mobile') {
+    const board = await page.locator('.board-scroll').boundingBox();
+    const editor = await page.locator('.word-editor').boundingBox();
+    expect(board!.y).toBeLessThan(editor!.y);
+    expect(editor!.y + editor!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+    await page.screenshot({path:'test-results/tap-to-type-mobile.png',fullPage:false,animations:'disabled'});
+    await page.getByRole('button', { name: 'Fechar teclado', exact: true }).click();
+    await expect(page.locator('.word-editor')).not.toHaveClass(/editing/);
+  }
+  await page.locator(`[data-cell="${intersection.key}"]`).scrollIntoViewIfNeeded();
+  await page.locator(`[data-cell="${intersection.key}"]`).click();
+  await expect(page.locator('#active-clue')).toHaveText(owners.find(word => word.id !== selected)!.clue);
+  await expect(page.locator('#answer-input')).toBeFocused();
 });
 
 for (const mode of ['classic', 'cascade'] as Mode[]) {
@@ -84,6 +113,7 @@ test('on-screen keyboard and physical keyboard, sound and reduced motion', async
   await start(page, 'classic');
   const session: Session = (await state(page)).sessions['classic:1'];
   const word = session.puzzle.words[0];
+  await page.locator(`[data-word="${word.id}"]`).click();
   for (const letter of word.answer) await page.locator(`[data-key="${letter}"]`).click();
   await page.locator('[data-key="Enter"]').click();
   expect((await state(page)).sessions['classic:1'].solved).toContain(word.id);

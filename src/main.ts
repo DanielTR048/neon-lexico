@@ -1,5 +1,6 @@
 import './style.css';
 import './profiles.css';
+import './mobile-game.css';
 import { themes } from './content';
 import { cellKey, createSession, drawThemes, generatePuzzle, getScore, getStars, normalizeAnswer, submitWord, useHint, wordCells, MAX_HINTS } from './engine';
 import { exportSave, importSave, loadSave, readProfile, recordCompletion, saveGame, unlockedLevel, profileKey, type ProfileId } from './storage';
@@ -25,6 +26,7 @@ let activeWordId = '';
 let cursor = 0;
 let searchTerm = '';
 let revealAnimation: string[] = [];
+let editingWord = false;
 let storageOkay = true;
 let toastTimer: ReturnType<typeof setTimeout>;
 let audioContext: AudioContext | undefined;
@@ -67,6 +69,7 @@ function pickerView() {
   }).join('')}</div><div class="picker-actions"><button class="btn outline" data-action="sync-setup">${icon('layers',16)} ${getCode() ? 'Código dos aparelhos' : 'Conectar site e app Android'}</button>${apk ? `<a class="btn outline" href="${esc(apk)}" download="neon-lexico-android.apk">${icon('download',16)} Baixar app Android</a>` : ''}</div><p class="picker-note">Seu progresso fica separado e funciona offline.<br>${getCode() ? 'Site e app conectados com o mesmo código.' : 'Use o mesmo código no site e no app para sincronizar.'}</p><div class="profile-loading" role="status">${picking ? 'Abrindo sua campanha…' : ''}</div></main>${dialogMarkup}`;
 }
 function resetProfileView() {
+  editingWord = false;
   view = 'home'; mode = 'classic'; level = 1; selectedThemes = []; drawCount = 0; activeWordId = ''; cursor = 0; searchTerm = ''; revealAnimation = [];
   document.querySelectorAll('.confetti').forEach(node => node.remove());
 }
@@ -156,6 +159,12 @@ function navButton(target: View, name: string, glyph: string, count = '') {
 }
 
 function render() {
+  if (view !== 'play' || current()?.completed) editingWord = false;
+  const restoreFocus = view === 'play' && editingWord;
+  document.documentElement.classList.toggle('game-playing', !!activeProfile && view === 'play');
+  document.documentElement.classList.toggle('word-editing', !!activeProfile && view === 'play' && editingWord);
+  const previousBoard = view === 'play' ? document.querySelector('#board') : null;
+  const boardPosition = previousBoard ? { left: previousBoard.scrollLeft, top: previousBoard.scrollTop } : undefined;
   if (!activeProfile) { document.title = 'Neon Léxico — Escolha seu perfil'; app.innerHTML = pickerView(); return; }
   document.documentElement.classList.toggle('reduce-motion', save.settings.reducedMotion);
   document.title = `Neon Léxico — ${labels[view]}`;
@@ -163,6 +172,8 @@ function render() {
   app.innerHTML = `<div class="app-shell"><aside class="sidebar"><button class="brand" data-view="home" aria-label="Neon Léxico, início">${logo}<span class="brand-name">NEON<span style="display:block">LÉXICO</span><small>WORD ARCADE</small></span></button><div class="side-caption">SEU TERMINAL</div><nav aria-label="Navegação principal">${navButton('home','Central de jogo','home')}${navButton('map','Mapa de fases','grid','200')}${navButton('themes','Universos','layers',String(themes.length))}${navButton('stats','Seu progresso','trophy')}</nav><div class="sidebar-bottom">${navButton('help','Como jogar','help')}${navButton('settings','Ajustes','settings')}<div class="side-system"><div class="signal-line"><span class="status-dot"></span> SISTEMA ONLINE</div><small>EST. 2086 · VERSÃO 1.0</small></div></div></aside><div class="main-wrap"><header class="topbar"><div class="breadcrumb">TERMINAL <span>/</span><b>${labels[view]}</b></div><button class="mobile-brand" data-view="home" aria-label="Neon Léxico, início">${logo} NEON LÉXICO</button><div class="top-actions"><div class="small-pill">${icon('star',12)} ${totalStars()} ESTRELAS</div><button class="icon-btn" data-action="sound" aria-label="${save.settings.sound ? 'Desativar' : 'Ativar'} som" title="Som">${icon(save.settings.sound ? 'sound' : 'mute',16)}</button><div class="avatar" title="Seu perfil local">LX</div></div></header><main id="main" class="main-content">${!storageOkay ? '<div class="save-warning">Seu navegador não está salvando. Use Ajustes → Exportar progresso.</div>' : ''}${page}<footer class="footer"><span>NEON LÉXICO © 2086<br>UMA PALAVRA. UMA NOVA CONEXÃO.</span><span class="footer-right">FEITO PARA MENTES CURIOSAS.</span></footer></main></div><nav class="mobile-nav" aria-label="Navegação no celular">${(['home','map','themes','stats','settings'] as View[]).map((v,i)=>`<button data-view="${v}" class="${v===view || v==='map'&&['setup','play'].includes(view) ? 'active' : ''}" aria-label="${labels[v]}">${icon(['home','grid','layers','trophy','settings'][i])}<span>${['Início','Fases','Universos','Progresso','Ajustes'][i]}</span></button>`).join('')}</nav></div>`;
   app.querySelector('.topbar')?.insertAdjacentHTML('afterend', `<div class="profile-toolbar"><strong>${players.find(player => player.id === activeProfile)!.name}</strong><button class="sync-status" data-action="sync-setup">${status(activeProfile)}</button><button data-action="switch-profile">Trocar perfil</button></div>`);
   app.insertAdjacentHTML('beforeend', dialogMarkup);
+  if (boardPosition) { const board = document.querySelector('#board'); if (board) { board.scrollLeft = boardPosition.left; board.scrollTop = boardPosition.top; } }
+  if (restoreFocus) focusAnswer();
 }
 
 function renderHome() {
@@ -216,10 +227,46 @@ function selectWord(id: string, cell?: string) {
   const word = session?.puzzle.words.find(w=>w.id===id);
   if (!session || !word) return;
   activeWordId = id;
+  editingWord = true;
   const cells = wordCells(word);
   cursor = cell ? Math.max(0,cells.findIndex(c=>c.key===cell)) : Math.max(0,cells.findIndex(c=>!session.values[c.key]));
   render();
 }
+
+function focusAnswer() {
+  const input = document.querySelector<HTMLInputElement>('#answer-input');
+  if (input && !input.disabled) input.focus({ preventScroll: true });
+  updateKeyboardViewport();
+  if (editingWord && matchMedia('(max-width:700px)').matches) document.querySelector('.board-panel')?.scrollIntoView({ block: 'start', behavior: 'instant' });
+}
+
+function updateKeyboardViewport() {
+  const viewport = window.visualViewport;
+  const inset = viewport ? Math.max(0, innerHeight - viewport.height - viewport.offsetTop) : 0;
+  document.documentElement.style.setProperty('--ime-bottom', `${inset}px`);
+  document.documentElement.style.setProperty('--visual-height', `${viewport?.height || innerHeight}px`);
+  document.documentElement.classList.toggle('ime-visible', inset > 100);
+  if (editingWord && matchMedia('(max-width:700px)').matches) {
+    const editorHeight = document.querySelector('.word-editor')?.getBoundingClientRect().height || 0;
+    const headerHeight = document.querySelector('.topbar')?.getBoundingClientRect().height || 0;
+    const navigationHeight = inset > 100 ? 0 : document.querySelector('.mobile-nav')?.getBoundingClientRect().height || 0;
+    document.documentElement.style.setProperty('--typing-board-height', `${Math.max(80, (viewport?.height || innerHeight) - editorHeight - headerHeight - navigationHeight - 12)}px`);
+    const board = document.querySelector('#board');
+    const selected = current() && activeWord() ? wordCells(activeWord()!)[cursor] : undefined;
+    const cell = selected && board?.querySelector(`[data-cell="${selected.key}"]`);
+    if (board && cell) {
+      const grid = board.getBoundingClientRect(), tile = cell.getBoundingClientRect();
+      if (tile.bottom > grid.bottom) board.scrollTop += tile.bottom - grid.bottom + 8;
+      else if (tile.top < grid.top) board.scrollTop += tile.top - grid.top - 8;
+      if (tile.right > grid.right) board.scrollLeft += tile.right - grid.right + 8;
+      else if (tile.left < grid.left) board.scrollLeft += tile.left - grid.left - 8;
+    }
+  }
+}
+window.visualViewport?.addEventListener('resize', updateKeyboardViewport);
+window.visualViewport?.addEventListener('scroll', updateKeyboardViewport);
+window.addEventListener('resize', updateKeyboardViewport);
+updateKeyboardViewport();
 
 function renderGame() {
   const session = current();
@@ -228,7 +275,7 @@ function renderGame() {
   if (!puzzle.words.some(word=>word.id===activeWordId)) activeWordId = (puzzle.words.find(word=>!session.solved.includes(word.id)) || puzzle.words[0]).id;
   const word = activeWord()!;
   const complete = session.completed;
-  return `<div class="game-header"><div><div class="eyebrow">${modeName(mode).toUpperCase()} / ${esc(puzzle.difficulty)}</div><h1>Fase ${pad(level)} <span style="color:var(--muted);font-weight:400">· ${complete?'Sinal decifrado':'Encontre a conexão'}</span></h1></div><div class="game-badges"><span class="small-pill">${icon('clock',12)} <span id="timer">${timeLabel(session.elapsed)}</span></span><span class="small-pill">${icon('bolt',12)} <span id="score">${getScore(session)}</span> PTS</span></div></div><div class="game-themes">${puzzle.themeIds.map(id=>`<span class="theme-chip">${esc(themes.find(t=>t.id===id)?.name || id)}</span>`).join('')}</div>${complete?renderSuccess(session):''}<div class="game-layout"><section class="board-panel" aria-label="Tabuleiro de ${modeName(mode)}"><div class="board-caption"><span>${mode==='classic'?'CRUZADAS DE REVISTA':'CONEXÕES EM CASCATA'}</span><b>${session.solved.length} / ${puzzle.words.length} DECIFRADAS</b></div><div id="board" class="board-scroll">${renderBoard(session)}</div><div class="board-legend"><span><i class="legend-box"></i> A descobrir</span><span><i class="legend-box amber"></i> Letra conectada</span></div>${!complete?renderKeyboard():''}<div class="game-progress"><div class="progress-track"><span style="width:${session.solved.length/puzzle.words.length*100}%"></span></div><span>${Math.round(session.solved.length/puzzle.words.length*100)}% DO SINAL</span></div></section><section class="game-side" aria-label="Pistas e respostas">${!complete?`<form class="answer-panel" id="answer-form"><div class="answer-kicker"><span>${word.number}${mode==='classic'?(word.direction==='across'?' → HORIZONTAL':' ↓ VERTICAL'):' / LINHA'}</span><span>${word.answer.length} LETRAS</span></div><h2 id="active-clue">${esc(word.clue)}</h2><label for="answer-input" class="sr-only">Resposta para a pista ${word.number}</label><input id="answer-input" class="answer-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" maxlength="40" value="${esc(answerPrefix(session,word))}" placeholder="${session.solved.includes(word.id)?'Palavra decifrada':`Sua resposta · ${word.answer.length} letras`}" ${session.solved.includes(word.id)?'disabled':''} aria-describedby="active-clue"><div class="answer-controls"><button type="submit" class="btn" ${session.solved.includes(word.id)?'disabled':''}>Conectar ${icon('arrow',15)}</button><button type="button" class="btn outline" data-action="hint" aria-label="Revelar uma letra" title="Dicas disponíveis nesta fase" ${session.solved.includes(word.id)||session.hints>=MAX_HINTS?'disabled':''}>${icon('bulb',18)} <small>${Math.max(0,MAX_HINTS-session.hints)}/${MAX_HINTS}</small></button></div><p class="answer-hint">${esc(word.themeName)} · ${session.hints} ${session.hints===1?'dica usada de 3':'dicas usadas de 3'} · ${session.mistakes} ${session.mistakes===1?'tentativa incorreta':'tentativas incorretas'}</p></form>`:''}<div class="word-list"><div class="list-heading">${mode==='classic'?'PISTAS DA FREQUÊNCIA':'PISTAS / DE CIMA PARA BAIXO'}</div>${puzzle.words.map(w=>`<button class="word-clue ${w.id===activeWordId?'active':''} ${session.solved.includes(w.id)?'is-solved':''}" data-word="${esc(w.id)}"><span class="clue-num">${session.solved.includes(w.id)?icon('check',14):w.number}</span><span class="clue-copy">${esc(w.clue)}<small>${esc(w.themeName)} · ${w.answer.length} letras${mode==='classic'?` · ${w.direction==='across'?'horizontal →':'vertical ↓'}`:''}${session.solved.includes(w.id)?` · ${esc(w.answer)}`:''}</small></span></button>`).join('')}</div></section></div><div class="toolbar"><button class="btn text" data-view="map">${icon('back',15)} Salvar e voltar ao mapa</button></div>`;
+  return `<div class="game-header"><div><div class="eyebrow">${modeName(mode).toUpperCase()} / ${esc(puzzle.difficulty)}</div><h1>Fase ${pad(level)} <span style="color:var(--muted);font-weight:400">· ${complete?'Sinal decifrado':'Encontre a conexão'}</span></h1></div><div class="game-badges"><span class="small-pill">${icon('clock',12)} <span id="timer">${timeLabel(session.elapsed)}</span></span><span class="small-pill">${icon('bolt',12)} <span id="score">${getScore(session)}</span> PTS</span></div></div><div class="game-themes">${puzzle.themeIds.map(id=>`<span class="theme-chip">${esc(themes.find(t=>t.id===id)?.name || id)}</span>`).join('')}</div>${complete?renderSuccess(session):''}<div class="game-layout"><section class="board-panel" aria-label="Tabuleiro de ${modeName(mode)}"><div class="board-caption"><span>${mode==='classic'?'CRUZADAS DE REVISTA':'CONEXÕES EM CASCATA'}</span><b>${session.solved.length} / ${puzzle.words.length} DECIFRADAS</b></div><div id="board" class="board-scroll">${renderBoard(session)}</div><div class="board-legend"><span><i class="legend-box"></i> A descobrir</span><span><i class="legend-box amber"></i> Letra conectada</span></div><div class="game-progress"><div class="progress-track"><span style="width:${session.solved.length/puzzle.words.length*100}%"></span></div><span>${Math.round(session.solved.length/puzzle.words.length*100)}% DO SINAL</span></div></section><section class="game-side" aria-label="Pistas e respostas"><div class="word-editor ${editingWord?'editing':''}">${!complete?`<form class="answer-panel" id="answer-form"><div class="answer-kicker"><span>${word.number}${mode==='classic'?(word.direction==='across'?' → HORIZONTAL':' ↓ VERTICAL'):' / LINHA'}</span><span>${word.answer.length} LETRAS</span><button type="button" class="editor-close" data-action="close-keyboard" aria-label="Fechar teclado">⌄</button></div><h2 id="active-clue">${esc(word.clue)}</h2><label for="answer-input" class="sr-only">Resposta para a pista ${word.number}</label><input id="answer-input" class="answer-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" maxlength="40" value="${esc(answerPrefix(session,word))}" placeholder="${session.solved.includes(word.id)?'Palavra decifrada':`Sua resposta · ${word.answer.length} letras`}" ${session.solved.includes(word.id)?'disabled':''} aria-describedby="active-clue"><div class="answer-controls"><button type="submit" class="btn" ${session.solved.includes(word.id)?'disabled':''}>Conectar ${icon('arrow',15)}</button><button type="button" class="btn outline" data-action="hint" aria-label="Revelar uma letra" title="Dicas disponíveis nesta fase" ${session.solved.includes(word.id)||session.hints>=MAX_HINTS?'disabled':''}>${icon('bulb',18)} <small>${Math.max(0,MAX_HINTS-session.hints)}/${MAX_HINTS}</small></button></div><p class="answer-hint">${esc(word.themeName)} · ${session.hints} ${session.hints===1?'dica usada de 3':'dicas usadas de 3'} · ${session.mistakes} ${session.mistakes===1?'tentativa incorreta':'tentativas incorretas'}</p></form>`:''}${!complete?renderKeyboard():''}</div><div class="word-list"><div class="list-heading">${mode==='classic'?'PISTAS DA FREQUÊNCIA':'PISTAS / DE CIMA PARA BAIXO'}</div>${puzzle.words.map(w=>`<button class="word-clue ${w.id===activeWordId?'active':''} ${session.solved.includes(w.id)?'is-solved':''}" data-word="${esc(w.id)}"><span class="clue-num">${session.solved.includes(w.id)?icon('check',14):w.number}</span><span class="clue-copy">${esc(w.clue)}<small>${esc(w.themeName)} · ${w.answer.length} letras${mode==='classic'?` · ${w.direction==='across'?'horizontal →':'vertical ↓'}`:''}${session.solved.includes(w.id)?` · ${esc(w.answer)}`:''}</small></span></button>`).join('')}</div></section></div><div class="toolbar"><button class="btn text" data-view="map">${icon('back',15)} Salvar e voltar ao mapa</button></div>`;
 }
 
 function renderBoard(session: Session) {
@@ -370,6 +417,7 @@ app.addEventListener('click',async event=>{
   const element=(event.target as HTMLElement).closest<HTMLElement>('button');if(!element||element.hasAttribute('disabled'))return;
   const targetView=element.dataset.view as View|undefined;if(targetView){navigate(targetView);return;}
   const action=element.dataset.action;
+  if(action==='close-keyboard'){editingWord=false;document.querySelector<HTMLInputElement>('#answer-input')?.blur();render();return;}
   if(action==='choose-profile'){await chooseProfile(element.dataset.profile as ProfileId);return;}
   if(action==='switch-profile'){switchProfile();return;}
   if(action==='sync-setup'){showSyncSetup();return;}
@@ -433,6 +481,14 @@ app.addEventListener('input',event=>{
     const filtered=themes.filter(theme=>normalizeAnswer(`${theme.id} ${theme.name} ${theme.description}`).includes(normalizeAnswer(searchTerm)));
     document.querySelector('#theme-library')!.innerHTML=filtered.map((theme,index)=>themeCard(theme,index,true)).join('')||'<p class="empty-state">Nenhum universo encontrado. Tente outra palavra.</p>';
     document.querySelector('#theme-count')!.textContent=`${filtered.length} UNIVERSOS`;
+  }
+});
+app.addEventListener('focusin', event => {
+  if ((event.target as HTMLElement).id === 'answer-input') {
+    editingWord = true;
+    document.querySelector('.word-editor')?.classList.add('editing');
+    document.documentElement.classList.add('word-editing');
+    updateKeyboardViewport();
   }
 });
 app.addEventListener('change',async event=>{

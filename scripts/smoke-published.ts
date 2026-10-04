@@ -22,6 +22,17 @@ try {
   const read = () => page.evaluate(() => JSON.parse(localStorage.getItem('neon-lexico:v1')!) as SaveData);
   const first = (await read()).sessions['classic:1'];
   if (first.puzzle.words.length !== 12 || first.puzzle.words.some(word => word.answer.length > 6 || word.difficulty !== 1)) throw new Error('Starting difficulty differs from verified rules');
+  const selected = first.puzzle.words[0];
+  const cell = page.locator(`[data-cell="${selected.row}:${selected.col}"]`);
+  await cell.click();
+  await expect(page.locator('#answer-input')).toBeFocused();
+  await expect(page.locator('.word-editor.editing')).toBeVisible();
+  const activeId = await page.locator('.word-clue.active').getAttribute('data-word');
+  await expect(page.locator('#active-clue')).toHaveText(first.puzzle.words.find(word => word.id === activeId)!.clue);
+  const editor = await page.locator('.word-editor').boundingBox();
+  if (!editor || editor.y + editor.height > page.viewportSize()!.height) throw new Error('Selected clue lies outside the mobile viewport');
+  await page.screenshot({ path: directory + '/tap-to-type.png', fullPage: false });
+  await page.getByRole('button', { name: 'Fechar teclado', exact: true }).click();
   for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Revelar uma letra', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Revelar uma letra', exact: true })).toBeDisabled();
   await page.screenshot({ path: directory + '/classic.png', fullPage: true });
@@ -67,5 +78,5 @@ try {
   const hash = (data: Buffer) => createHash('sha256').update(data).digest('hex');
   if (hash(local) !== hash(bytes)) throw new Error('Published APK checksum mismatch');
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log(JSON.stringify({ url, profiles: 'separate', startingWords: 12, hints: 3, offline: 'passed', androidNativeSave: proof ? 'verified' : 'not supplied', apkBytes: bytes.length, apkSha256: hash(bytes), pageErrors: errors.length }));
+  console.log(JSON.stringify({ url, profiles: 'separate', startingWords: 12, hints: 3, tapToType: 'passed', offline: 'passed', androidNativeSave: proof ? 'verified' : 'not supplied', apkBytes: bytes.length, apkSha256: hash(bytes), pageErrors: errors.length }));
 } finally { await browser.close(); }

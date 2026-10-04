@@ -1,0 +1,24 @@
+.word-editor .keyboard{border:1px solid var(--border);border-top:0;background:var(--panel);margin-bottom:16px}.editor-close{display:none}.word-editor .answer-panel{margin-bottom:0}
+@media(max-width:700px){
+  .ime-visible .mobile-nav{display:none}
+  .game-layout .board-panel{order:0}
+  .game-layout .word-editor{order:1;width:100%}
+  .game-layout .word-list{order:2}
+  .word-editor .keyboard{display:none}
+  .word-editor.editing{position:fixed;left:0;right:0;bottom:calc(var(--ime-bottom,0px) + 64px);z-index:40;background:var(--panel);border-top:2px solid var(--amber);box-shadow:0 -8px 25px #0006;max-height:calc(var(--visual-height,100dvh)*.65);overflow:auto;padding-bottom:env(safe-area-inset-bottom)}
+  .ime-visible .word-editor.editing{bottom:var(--ime-bottom,0px)}
+  .word-editor.editing .keyboard{display:flex;padding:8px 6px;margin:0;border:0}
+  .ime-visible .word-editor .keyboard{display:none}
+  .word-editor .answer-panel{padding:12px;border:0;border-radius:0}
+  .word-editor .answer-kicker{margin-bottom:6px;align-items:center}
+  .word-editor h2{font-size:14px;line-height:1.5;margin-bottom:8px}
+  .word-editor .answer-input{padding:8px 10px}
+  .word-editor .answer-controls{margin-top:8px}
+  .word-editor .answer-hint{margin-top:6px}
+  .word-editor .editor-close{display:block;background:none;color:var(--amber);font-size:22px;min-width:35px;min-height:30px;padding:0;margin-left:8px}
+  .game-playing .main-content{padding-bottom:340px;animation:none}
+  .game-playing .board-scroll{max-height:44dvh}
+  .word-editing .board-panel{scroll-margin-top:75px}
+  .word-editing .board-caption,.word-editing .board-legend,.word-editing .game-progress{display:none}
+  .word-editing .board-scroll{max-height:var(--typing-board-height,25dvh)}
+}

@@ -21,6 +21,11 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -126,7 +131,7 @@ fun NeonApp(vm: GameViewModel) {
                     if (state.screen != Screen.PLAY && state.screen != Screen.SETUP) TerminalNavigation(state.screen, vm::navigate)
                 },
             ) { insets ->
-                Box(Modifier.padding(insets).fillMaxSize().imePadding()) {
+                Box(Modifier.padding(insets).consumeWindowInsets(insets).fillMaxSize().imePadding()) {
                     when (state.screen) {
                         Screen.HOME -> HomePage(vm)
                         Screen.MAP -> MapPage(vm)
@@ -474,6 +479,19 @@ private fun PlayPage(vm: GameViewModel) {
     }
     val word = session.puzzle.words.find { it.id == state.activeWordId } ?: session.puzzle.words.firstOrNull() ?: return
     val focus = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
+    val answerFocus = remember { FocusRequester() }
+    val listState = rememberLazyListState()
+    val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
+    var selectionRequest by remember { mutableIntStateOf(0) }
+    fun selectAndType(id: String) { vm.selectWord(id); selectionRequest++ }
+    LaunchedEffect(selectionRequest) {
+        if (selectionRequest > 0 && !session.completed && word.id !in session.solved) {
+            answerFocus.requestFocus()
+            keyboard?.show()
+            listState.scrollToItem(2)
+        } else if (selectionRequest > 0) { keyboard?.hide(); focus.clearFocus() }
+    }
     val answer = answerPrefix(session, word)
     val connectedPattern = cells(word).joinToString(" ") { session.revealed[cellKey(it)] ?: "·" }
     val tone = remember(state.save.settings.sound) { if (state.save.settings.sound) runCatching { ToneGenerator(AudioManager.STREAM_MUSIC, 20) }.getOrNull() else null }
@@ -486,11 +504,12 @@ private fun PlayPage(vm: GameViewModel) {
         previousSolved = session.solved.size; previousMistakes = session.mistakes
     }
     fun confirm() { vm.submitAnswer(answer); focus.clearFocus() }
-    LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), contentPadding = PaddingValues(vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    Column(Modifier.fillMaxSize()) {
+    LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal = 16.dp), state = listState, contentPadding = PaddingValues(vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(if (keyboardVisible) 2.dp else 10.dp)) {
                 Eyebrow("${modeName(state.mode).uppercase()} / ${session.puzzle.difficulty.uppercase()}")
-                Text("Fase ${state.level.toString().padStart(2, '0')} · ${if (session.completed) "Sinal decifrado" else "Encontre a conexão"}", fontSize = 22.sp, lineHeight = 28.sp)
+                if (!keyboardVisible) Text("Fase ${state.level.toString().padStart(2, '0')} · ${if (session.completed) "Sinal decifrado" else "Encontre a conexão"}", fontSize = 22.sp, lineHeight = 28.sp)
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text("◷ ${timeLabel(session.elapsed)}", color = Muted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                     Text("ϟ ${score(session)} PTS", color = Amber, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
@@ -499,31 +518,16 @@ private fun PlayPage(vm: GameViewModel) {
             }
         }
         item {
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+            if (!keyboardVisible) LazyRow(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
                 items(session.puzzle.themeIds) { id -> Text(state.themes.find { it.id == id }?.name ?: id, color = Violet, fontSize = 10.sp, modifier = Modifier.clip(Corners).border(1.dp, Violet.copy(alpha = .25f), Corners).padding(horizontal = 9.dp, vertical = 7.dp)) }
             }
         }
         if (session.completed) item { VictoryPanel(session, vm) }
-        if (!session.completed) item {
-            PanelBox {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Eyebrow("${word.number} ${if (session.puzzle.mode == Mode.CLASSIC) if (word.direction == "across") "→ HORIZONTAL" else "↓ VERTICAL" else "/ LINHA"}")
-                    Text("${word.answer.length} LETRAS", color = Muted, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
-                }
-                Text(word.clue, fontSize = 18.sp, lineHeight = 27.sp, color = Ink)
-                OutlinedTextField(value = answer, onValueChange = vm::updateDraft, label = { Text("Sua resposta", fontSize = 12.sp) }, supportingText = { Text("Letras conectadas: $connectedPattern", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = Violet) }, singleLine = true, enabled = word.id !in session.solved, modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Resposta para pista ${word.number}" }, textStyle = MaterialTheme.typography.bodyLarge.copy(color = Amber, fontFamily = FontFamily.Monospace, letterSpacing = 2.sp), shape = Corners, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, autoCorrectEnabled = false, imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { confirm() }))
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    NeonButton("CONECTAR →", { confirm() }, modifier = Modifier.weight(1f), enabled = word.id !in session.solved)
-                    NeonButton("DICA ${(3 - session.hints).coerceAtLeast(0)}/3", { vm.hint() }, outline = true, enabled = word.id !in session.solved && session.hints < 3, modifier = Modifier.semantics { contentDescription = "Revelar uma letra, ${(3 - session.hints).coerceAtLeast(0)} dicas restantes" })
-                }
-                Text("${word.themeName} · ${(3 - session.hints).coerceAtLeast(0)} dicas restantes · ${session.mistakes} tentativas incorretas", color = Muted, fontSize = 10.sp, lineHeight = 18.sp)
-            }
-        }
-        item { NativePuzzleBoard(session, word, vm::selectWord) }
+        item { NativePuzzleBoard(session, word, ::selectAndType) }
         item { Eyebrow(if (state.mode == Mode.CLASSIC) "PISTAS DA FREQUÊNCIA" else "PISTAS / DE CIMA PARA BAIXO") }
         items(session.puzzle.words, key = { it.id }) { clue ->
             val solved = clue.id in session.solved
-            Row(Modifier.fillMaxWidth().clip(Corners).background(if (clue.id == word.id) Amber.copy(alpha = .07f) else Panel).border(1.dp, if (clue.id == word.id) Amber.copy(alpha = .4f) else Stroke, Corners).clickable { vm.selectWord(clue.id) }.padding(15.dp), verticalAlignment = Alignment.Top) {
+            Row(Modifier.fillMaxWidth().clip(Corners).background(if (clue.id == word.id) Amber.copy(alpha = .07f) else Panel).border(1.dp, if (clue.id == word.id) Amber.copy(alpha = .4f) else Stroke, Corners).clickable { selectAndType(clue.id) }.padding(15.dp), verticalAlignment = Alignment.Top) {
                 Text(if (solved) "✓" else clue.number.toString(), color = Amber, fontFamily = FontFamily.Monospace, fontSize = 12.sp, modifier = Modifier.width(25.dp))
                 Column(verticalArrangement = Arrangement.spacedBy(7.dp)) {
                     Text(clue.clue, color = if (solved) Muted else Ink, fontSize = 12.sp, lineHeight = 20.sp)
@@ -532,6 +536,23 @@ private fun PlayPage(vm: GameViewModel) {
             }
         }
         item { NeonButton("← SALVAR E VOLTAR AO MAPA", { focus.clearFocus(); vm.navigate(Screen.MAP) }, outline = true, modifier = Modifier.fillMaxWidth()) }
+    }
+        if (!session.completed) {
+            Column(Modifier.fillMaxWidth().background(Panel).padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Eyebrow("${word.number} ${if (session.puzzle.mode == Mode.CLASSIC) if (word.direction == "across") "→ HORIZONTAL" else "↓ VERTICAL" else "/ LINHA"}")
+                    Text("${word.answer.length} LETRAS", color = Muted, fontSize = 9.sp, fontFamily = FontFamily.Monospace)
+                    TextButton(onClick = { keyboard?.hide(); focus.clearFocus() }, modifier = Modifier.height(28.dp).semantics { contentDescription = "Fechar teclado" }) { Text("⌄", color = Amber, fontSize = 20.sp) }
+                }
+                Text(word.clue, fontSize = 15.sp, lineHeight = 21.sp, color = Ink)
+                OutlinedTextField(value = answer, onValueChange = vm::updateDraft, label = { Text("Sua resposta", fontSize = 12.sp) }, supportingText = { Text("Letras conectadas: $connectedPattern", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = Violet) }, singleLine = true, enabled = word.id !in session.solved, modifier = Modifier.fillMaxWidth().focusRequester(answerFocus).semantics { contentDescription = "Resposta para pista ${word.number}" }, textStyle = MaterialTheme.typography.bodyLarge.copy(color = Amber, fontFamily = FontFamily.Monospace, letterSpacing = 2.sp), shape = Corners, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, autoCorrectEnabled = false, imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { confirm() }))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    NeonButton("CONECTAR →", { confirm() }, modifier = Modifier.weight(1f), enabled = word.id !in session.solved)
+                    NeonButton("DICA ${(3 - session.hints).coerceAtLeast(0)}/3", { vm.hint() }, outline = true, enabled = word.id !in session.solved && session.hints < 3, modifier = Modifier.semantics { contentDescription = "Revelar uma letra, ${(3 - session.hints).coerceAtLeast(0)} dicas restantes" })
+                }
+                Text("${word.themeName} · ${(3 - session.hints).coerceAtLeast(0)} dicas restantes · ${session.mistakes} tentativas incorretas", color = Muted, fontSize = 10.sp, lineHeight = 18.sp)
+            }
+        }
     }
 }
 
