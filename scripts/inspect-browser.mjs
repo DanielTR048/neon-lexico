@@ -1,0 +1,24 @@
+import { chromium } from '@playwright/test';
+import { mkdir } from 'node:fs/promises';
+await mkdir('artifacts', { recursive: true });
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
+page.on('console', message => { if (message.type() === 'error') console.log('CONSOLE', message.text()); });
+page.on('pageerror', error => console.log('PAGE ERROR', error.message));
+page.on('requestfailed', request => console.log('REQUEST FAILED', request.url(), request.failure()));
+page.context().on('serviceworker', worker => {
+  console.log('SERVICE WORKER', worker.url());
+  worker.on('console', message => console.log('SW CONSOLE', message.text()));
+});
+await page.goto('http://127.0.0.1:4185/');
+await page.waitForTimeout(1500);
+await page.screenshot({path:'artifacts/desktop.png',fullPage:true,animations:'disabled'});
+console.log('SW STATE', await page.evaluate(async()=>({ secure:isSecureContext, registrations: (await navigator.serviceWorker.getRegistrations()).map(r=>({active:r.active?.state,installing:r.installing?.state,waiting:r.waiting?.state})), caches:await caches.keys(), toast:document.querySelector('#toast')?.textContent })));
+await page.setViewportSize({width:390,height:844});
+await page.screenshot({path:'artifacts/mobile.png',fullPage:true,animations:'disabled'});
+await page.getByRole('button', { name: 'Entrar como Daniel' }).click();
+await page.locator('[data-action="start"][data-mode="classic"]').click();
+await page.locator('[data-action="begin"]').click();
+await page.waitForSelector('#answer-input');
+await page.screenshot({path:'artifacts/mobile-game.png',fullPage:true,animations:'disabled'});
+await browser.close();

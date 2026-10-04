@@ -1,0 +1,10 @@
+<resources>
+    <style name="Theme.NeonLexico" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">#141018</item>
+        <item name="android:navigationBarColor">#141018</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:colorAccent">#F5BD70</item>
+    </style>
+</resources>

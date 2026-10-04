@@ -1,0 +1,13 @@
+import { mkdir, writeFile, copyFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+const root = new URL('../', import.meta.url);
+const catalog = execFileSync(process.execPath, ['--import', 'tsx', '--input-type=module', '-e', "import {themes} from './src/content.ts'; process.stdout.write(JSON.stringify({themes}));"], { cwd: fileURLToPath(root), encoding: 'utf8' });
+await mkdir(new URL('android-native/app/src/main/assets/', root), { recursive: true });
+await mkdir(new URL('android-native/app/src/main/res/font/', root), { recursive: true });
+await mkdir(new URL('android-native/app/src/main/res/drawable/', root), { recursive: true });
+await writeFile(new URL('android-native/app/src/main/assets/catalog.json', root), catalog + '\n');
+await copyFile(new URL('public/fonts/space-grotesk-regular.ttf', root), new URL('android-native/app/src/main/res/font/space_regular.ttf', root));
+await copyFile(new URL('public/fonts/space-grotesk-semibold.ttf', root), new URL('android-native/app/src/main/res/font/space_semibold.ttf', root));
+await copyFile(new URL('public/icon-512.png', root), new URL('android-native/app/src/main/res/drawable/neon_icon.png', root));
+console.log('Catálogo, fontes e ícone copiados para o app nativo.');

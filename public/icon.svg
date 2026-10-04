@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs><linearGradient id="phosphor" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#f5bd70"/><stop offset="1" stop-color="#f18576"/></linearGradient></defs>
+  <rect width="512" height="512" rx="112" fill="#121018"/>
+  <path d="M82 130V82h48m252 0h48v48m0 252v48h-48M130 430H82v-48" fill="none" stroke="#b69af6" stroke-width="8"/>
+  <path d="M112 338V174h38l76 98V174h38v164h-36l-78-100v100zm180 0V174h39v129h70v35z" fill="url(#phosphor)"/>
+  <path d="M120 126h272M120 382h272" stroke="#514259" stroke-width="3"/>
+  <g fill="#f18576"><rect x="120" y="371" width="22" height="22"/><rect x="152" y="371" width="22" height="22"/><rect x="184" y="371" width="22" height="22"/></g>
+  <path d="M298 120h22v22h-22zm32 0h22v22h-22zm32 0h22v22h-22z" fill="none" stroke="#b69af6" stroke-width="3"/>
+</svg>

@@ -1,0 +1,71 @@
+import { chromium, devices, expect } from '@playwright/test';
+import fs from 'node:fs';
+import { createHash } from 'node:crypto';
+import { importSave } from '../src/storage';
+import type { SaveData } from '../src/types';
+
+const url = process.env.NEON_PUBLIC_URL || 'https://danieltr048.github.io/neon-lexico/';
+const directory = 'output/published'; fs.mkdirSync(directory, { recursive: true });
+const browser = await chromium.launch();
+try {
+  const context = await browser.newContext({ ...devices['Pixel 7'], serviceWorkers: 'allow' });
+  const page = await context.newPage(); const errors: string[] = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.goto(url);
+  await expect(page.getByRole('heading', { name: 'Quem vai jogar hoje?' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Baixar app Android' })).toHaveAttribute('href', './android/neon-lexico.apk');
+  await page.screenshot({ path: directory + '/profiles.png', fullPage: true });
+  await page.getByRole('button', { name: 'Entrar como Daniel' }).click();
+  await page.locator('[data-action="start"][data-mode="classic"]').click();
+  await page.locator('[data-action="begin"]').click();
+  await expect(page.locator('#answer-input')).toBeVisible();
+  const read = () => page.evaluate(() => JSON.parse(localStorage.getItem('neon-lexico:v1')!) as SaveData);
+  const first = (await read()).sessions['classic:1'];
+  if (first.puzzle.words.length !== 12 || first.puzzle.words.some(word => word.answer.length > 6 || word.difficulty !== 1)) throw new Error('Starting difficulty differs from verified rules');
+  for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Revelar uma letra', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Revelar uma letra', exact: true })).toBeDisabled();
+  await page.screenshot({ path: directory + '/classic.png', fullPage: true });
+  await page.getByRole('button', { name: 'Trocar perfil', exact: true }).click();
+  await page.getByRole('button', { name: 'Entrar como Larissa' }).click();
+  const separate = await page.evaluate(() => JSON.parse(localStorage.getItem('neon-lexico:v1:larissa')!));
+  if (Object.keys(separate.sessions).length !== 0) throw new Error('Profile isolation failed');
+  await page.evaluate(async () => { await navigator.serviceWorker.ready; });
+  await expect.poll(() => page.evaluate(() => !!navigator.serviceWorker.controller)).toBe(true);
+  await page.getByRole('button', { name: 'Trocar perfil', exact: true }).click();
+  const downloadEvent = page.waitForEvent('download');
+  await page.getByRole('link', { name: 'Baixar app Android' }).click();
+  const download = await downloadEvent;
+  if (await download.failure()) throw new Error('APK browser download failed');
+  await page.getByRole('button', { name: 'Entrar como Larissa' }).click();
+  await context.setOffline(true); await page.reload();
+  await expect(page.getByRole('heading', { name: 'O futuro é um enigma.' })).toBeVisible();
+  await page.getByRole('button', { name: 'Trocar perfil', exact: true }).click();
+  await page.getByRole('button', { name: 'Entrar como Daniel' }).click();
+  await page.locator('[data-action="start"][data-mode="classic"]').click();
+  await expect(page.getByRole('button', { name: 'Revelar uma letra', exact: true })).toBeDisabled();
+  await context.setOffline(false); await context.close();
+
+  const proof = process.env.NEON_SYNC_PROOF_PATH;
+  if (proof && fs.existsSync(proof)) {
+    const save = importSave(fs.readFileSync(proof, 'utf8'));
+    const native = await browser.newContext({ ...devices['Pixel 7'] });
+    await native.addInitScript(data => localStorage.setItem('neon-lexico:v1', JSON.stringify(data)), save);
+    const view = await native.newPage(); await view.goto(url);
+    await view.getByRole('button', { name: 'Entrar como Daniel' }).click();
+    await view.locator('[data-action="start"][data-mode="cascade"]').click();
+    const session = save.sessions['cascade:1'];
+    await expect(view.locator('.word-clue.is-solved')).toHaveCount(session.solved.length);
+    if (session.completed) await expect(view.locator('.success-panel')).toBeVisible();
+    else await expect(view.locator('.answer-hint')).toContainText(`${session.hints} dica`);
+    await view.screenshot({ path: directory + '/native-roundtrip.png', fullPage: true });
+    await native.close();
+  }
+  const response = await fetch(new URL('./android/neon-lexico.apk', url));
+  if (!response.ok) throw new Error('Published APK missing');
+  const bytes = Buffer.from(await response.arrayBuffer());
+  const local = fs.readFileSync('public/android/neon-lexico.apk');
+  const hash = (data: Buffer) => createHash('sha256').update(data).digest('hex');
+  if (hash(local) !== hash(bytes)) throw new Error('Published APK checksum mismatch');
+  if (errors.length) throw new Error(errors.join('\n'));
+  console.log(JSON.stringify({ url, profiles: 'separate', startingWords: 12, hints: 3, offline: 'passed', androidNativeSave: proof ? 'verified' : 'not supplied', apkBytes: bytes.length, apkSha256: hash(bytes), pageErrors: errors.length }));
+} finally { await browser.close(); }
