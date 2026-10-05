@@ -22,7 +22,7 @@ test('home, navigation, theme search and responsive layout', async ({ page }, te
   await page.goto('/');
   await enterDaniel(page);
   await expect(page.locator('h1')).toContainText('O futuro');
-  await expect(page.locator('.mode-card')).toHaveCount(2);
+  await expect(page.locator('.mode-card')).toHaveCount(3);
   await expect(page.locator('body')).not.toHaveText(/undefined|NaN/);
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth);
   expect(overflow).toBe(false);

@@ -38,6 +38,10 @@ export function modeArt(cascade = false): string {
   return `<div class="mode-art ${cascade ? 'cascade-art' : ''}" aria-hidden="true">${layouts.map((row, r) => `<div class="art-row" style="--offset:${cascade ? r * 12 : 0}px">${[...row].map((letter, c) => `<span class="art-cell ${letter === ' ' ? 'empty' : ''} ${letter !== '▧' ? 'lit' : ''}" style="--delay:${r * 70 + c * 35}ms">${letter === '▧' || letter === ' ' ? '' : letter}</span>`).join('')}</div>`).join('')}${cascade ? '<div class="flow-arrow">↓ &nbsp; ↓ &nbsp; ↓</div>' : ''}</div>`;
 }
 
+export function magazineArt(): string {
+  return `<div class="mode-art magazine-art" role="img" aria-label="Miniatura de cruzadas de revista com pistas nas casas e setas">${['Parte da ave ↓','Moradia →','C','A','S','A',' ','S',' ',' ','Ave →','A','S','A',' ',' '].map((value,index)=>`<span class="magazine-art-cell ${value.includes('→')||value.includes('↓')?'clue':''}">${value.trim()}</span>`).join('')}<small>CRUZADAS DE REVISTA</small></div>`;
+}
+
 export function cityArt(): string {
   let windows = '';
   const buildings = [{x:8,y:150,w:47,h:165},{x:61,y:104,w:45,h:211},{x:116,y:181,w:46,h:134},{x:170,y:63,w:54,h:252},{x:234,y:144,w:43,h:171},{x:288,y:85,w:44,h:230},{x:342,y:130,w:70,h:185}];

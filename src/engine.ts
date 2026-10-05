@@ -52,7 +52,7 @@ export const MAX_HINTS = 3;
 export function phaseRules(mode: Mode, level: number) {
   const difficulty = level <= 20 ? 1 : level <= 60 ? 2 : 3;
   const maxLength = level <= 10 ? 6 : level <= 20 ? 8 : level <= 40 ? 10 : level <= 60 ? 12 : level <= 80 ? 15 : 20;
-  const count = mode === 'classic' ? Math.min(30, 12 + Math.floor((level - 1) / 5)) : Math.min(14, 5 + Math.floor((level - 1) / 10));
+  const count = mode !== 'cascade' ? Math.min(30, 12 + Math.floor((level - 1) / 5)) : Math.min(14, 5 + Math.floor((level - 1) / 10));
   return { difficulty, maxLength, count };
 }
 
@@ -64,6 +64,33 @@ export function wordCells(word: PuzzleWord): Array<{ row: number; col: number; k
     const col = word.col + (word.direction === 'across' ? index : 0);
     return { row, col, key: cellKey(row, col), letter };
   });
+}
+
+/** Arrowword clues occupy the empty square immediately before their answer. */
+export function clueCell(word: PuzzleWord) {
+  const row = word.row - (word.direction === 'down' ? 1 : 0);
+  const col = word.col - (word.direction === 'across' ? 1 : 0);
+  return { row, col, key: cellKey(row, col) };
+}
+
+export function gridFill(session: Session) {
+  const keys = new Set(session.puzzle.words.flatMap(wordCells).map(cell => cell.key));
+  const filled = [...keys].filter(key => !!session.values[key]).length;
+  return { filled, total: keys.size, full: filled === keys.size };
+}
+
+/** Only the final whole-grid check may disclose correctness in magazine mode. */
+export function checkGrid(session: Session): { session: Session; status: 'incomplete' | 'retry' | 'complete' } {
+  if (!gridFill(session).full) return { session, status: 'incomplete' };
+  if (session.completed) return { session, status: 'complete' };
+  if (!session.puzzle.words.flatMap(wordCells).every(cell => session.values[cell.key] === cell.letter)) {
+    return { session: { ...cloneSession(session), mistakes: session.mistakes + 1 }, status: 'retry' };
+  }
+  const next = cloneSession(session);
+  next.solved = next.puzzle.words.map(word => word.id);
+  next.completed = true;
+  for (const word of next.puzzle.words) revealWord(next, word);
+  return { session: next, status: 'complete' };
 }
 
 function candidatePool(selected: Theme[], random: Random, mode: Mode, level: number): Candidate[] {
@@ -221,9 +248,10 @@ export function generatePuzzle(seed: string, mode: Mode, level: number, themeIds
   for (let attempt = 0; attempt < 36 && !words; attempt++) {
     const random = rng(`${seed}:${mode}:${level}:${chosen.map(theme => theme.id).join(',')}:${attempt}`);
     const pool = candidatePool(chosen, random, mode, level);
-    words = mode === 'classic' ? crossword(pool, chosen, count, level, random) : cascade(pool, chosen, count, level, random);
+    words = mode !== 'cascade' ? crossword(pool, chosen, count, level, random) : cascade(pool, chosen, count, level, random);
   }
   if (!words) throw new Error('Não foi possível montar esta grade. Sorteie novos temas.');
+  if (mode === 'magazine') words = words.map(word => ({ ...word, row: word.row + 1, col: word.col + 1 }));
   const cells = words.flatMap(wordCells);
   return {
     id: `${mode}:${level}:${seed}:${chosen.map(theme => theme.id).join('.')}`,
@@ -278,6 +306,14 @@ export function submitWord(session: Session, wordId: string, answer: string): { 
     return { session, correct: !!word && session.solved.includes(wordId), newlySolved: [] };
   }
   const next = cloneSession(session);
+  if (session.puzzle.mode === 'magazine') {
+    const letters = normalizeAnswer(answer).slice(0, word.answer.length);
+    wordCells(word).forEach((cell, index) => {
+      if (next.revealed[cell.key]) return;
+      if (letters[index]) next.values[cell.key] = letters[index]; else delete next.values[cell.key];
+    });
+    return { session: next, correct: false, newlySolved: [] };
+  }
   if (normalizeAnswer(answer) !== word.answer) {
     next.mistakes++;
     return { session: next, correct: false, newlySolved: [] };
@@ -305,7 +341,7 @@ export function useHint(session: Session, wordId: string): Session {
       }
     }
   }
-  finishKnownWords(next);
+  if (session.puzzle.mode !== 'magazine') finishKnownWords(next);
   return next;
 }
 

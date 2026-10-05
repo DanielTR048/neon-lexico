@@ -16,6 +16,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -29,6 +30,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
@@ -37,6 +39,8 @@ import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontWeight
@@ -259,7 +263,7 @@ private fun PanelBox(modifier: Modifier = Modifier, content: @Composable ColumnS
     Column(modifier.fillMaxWidth().clip(Corners).background(Panel).border(1.dp, Stroke, Corners).padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = content)
 }
 
-private fun modeName(mode: Mode) = if (mode == Mode.CLASSIC) "Cruzadas clássicas" else "Efeito cascata"
+private fun modeName(mode: Mode) = mode.title
 private fun keyFor(mode: Mode, level: Int) = "${mode.name.lowercase(Locale.ROOT)}:$level"
 private fun timeLabel(seconds: Int) = "%02d:%02d".format(Locale.ROOT, seconds / 60, seconds % 60)
 private fun countCompleted(save: SaveData, mode: Mode) = save.results[mode]?.size ?: 0
@@ -275,11 +279,11 @@ private fun HomePage(vm: GameViewModel) {
         Eyebrow("SELECIONE SUA FREQUÊNCIA")
         Mode.entries.forEach { mode ->
             PanelBox {
-                Eyebrow(if (mode == Mode.CLASSIC) "MATRIZ DE PALAVRAS" else "REAÇÃO EM CADEIA", if (mode == Mode.CLASSIC) Amber else Violet)
+                Eyebrow(if (mode == Mode.MAGAZINE) "PISTAS DENTRO DAS CASAS" else if (mode == Mode.CLASSIC) "MATRIZ DE PALAVRAS" else "REAÇÃO EM CADEIA", if (mode != Mode.CASCADE) Amber else Violet)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Text(modeName(mode), fontSize = 24.sp, color = Ink)
-                        Text(if (mode == Mode.CLASSIC) "Cruze pistas e letras. As respostas se encontram em cada espaço da grade." else "Uma resposta ilumina a próxima. Resolva a primeira linha e deixe as letras fluírem.", color = Muted, fontSize = 12.sp, lineHeight = 21.sp)
+                        Text(if (mode == Mode.MAGAZINE) "Pistas dentro das casas e setas, como nas revistas. Preencha livremente e confira apenas a grade completa." else if (mode == Mode.CLASSIC) "Cruze pistas e letras. As respostas se encontram em cada espaço da grade." else "Uma resposta ilumina a próxima. Resolva a primeira linha e deixe as letras fluírem.", color = Muted, fontSize = 12.sp, lineHeight = 21.sp)
                     }
                     MiniBoard(mode, Modifier.size(75.dp).padding(start = 10.dp))
                 }
@@ -294,7 +298,7 @@ private fun HomePage(vm: GameViewModel) {
             Text("Heróis, ciência, código e muito mais. A cada fase, cinco universos se encontram no seu tabuleiro.", color = Muted, fontSize = 12.sp, lineHeight = 20.sp)
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            StatTile("${allResults(save).size} / 200", "FASES CONCLUÍDAS", Modifier.weight(1f))
+            StatTile("${allResults(save).size} / 300", "FASES CONCLUÍDAS", Modifier.weight(1f))
             StatTile("✦ ${allResults(save).sumOf { it.stars }}", "ESTRELAS", Modifier.weight(1f))
         }
         TerminalFooter()
@@ -306,7 +310,7 @@ private fun ModeSwitch(mode: Mode, select: (Mode) -> Unit) {
     Row(Modifier.fillMaxWidth().clip(Corners).background(Panel).border(1.dp, Stroke, Corners).padding(4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
         Mode.entries.forEach { item ->
             Box(Modifier.weight(1f).heightIn(min = 48.dp).clip(Corners).background(if (item == mode) Amber.copy(alpha = .12f) else Color.Transparent).clickable { select(item) }.padding(8.dp), contentAlignment = Alignment.Center) {
-                Text(if (item == Mode.CLASSIC) "Clássicas" else "Cascata", color = if (item == mode) Amber else Muted, fontSize = 12.sp)
+                Text(if (item == Mode.CLASSIC) "Cruzadas" else if (item == Mode.MAGAZINE) "Clássico" else "Cascata", color = if (item == mode) Amber else Muted, fontSize = 12.sp)
             }
         }
     }
@@ -319,7 +323,7 @@ private fun MapPage(vm: GameViewModel) {
     val unlocked = unlocked(state.save, mode)
     val sectors = listOf("Primeiro sinal", "Ruas de neon", "Circuito aberto", "Memória de silício", "Frequência oculta", "Cidade sintética", "Além do firewall", "Horizonte de dados", "Última transmissão", "O núcleo")
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 20.dp), contentPadding = PaddingValues(vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        item { PageHead("CAMPANHA / 200 FASES", "Toda conexão\ncomeça aqui.", "Dez distritos, cem desafios em cada modo. Complete uma fase para abrir a próxima.") }
+        item { PageHead("CAMPANHA / 300 FASES", "Toda conexão\ncomeça aqui.", "Dez distritos, cem desafios em cada modo. Complete uma fase para abrir a próxima.") }
         item { ModeSwitch(mode) { mode = it } }
         item { Text("${countCompleted(state.save, mode)} / 100 CONCLUÍDAS", color = Muted, fontSize = 10.sp, fontFamily = FontFamily.Monospace) }
         items(10) { sector ->
@@ -355,7 +359,7 @@ private fun SetupPage(vm: GameViewModel) {
         state.selectedThemes.forEachIndexed { index, theme -> ThemeTile(theme, index) }
         PanelBox {
             Eyebrow(if (state.level <= 30) "SINAL INICIAL" else if (state.level <= 65) "SINAL AVANÇADO" else "SINAL MESTRE")
-            Text(if (state.mode == Mode.CLASSIC) "As letras compartilhadas conectam as palavras." else "Acerte uma linha para revelar letras iguais nas linhas abaixo.", fontSize = 12.sp, color = Muted, lineHeight = 20.sp)
+            Text(if (state.mode == Mode.MAGAZINE) "Pistas dentro das casas, como nas revistas. Toque na casa e digite diretamente na grade. Confira só quando completar tudo." else if (state.mode == Mode.CLASSIC) "As letras compartilhadas conectam as palavras. Toque na casa e digite diretamente na grade." else "Toque na casa e digite diretamente na grade. Acerte uma linha para revelar letras iguais nas linhas abaixo.", fontSize = 12.sp, color = Muted, lineHeight = 20.sp)
             Text("Sem limite de tempo. Jogue no seu ritmo.", color = Muted, fontSize = 11.sp)
             NeonButton("SORTEAR NOVAMENTE ↻", vm::shuffleThemes, outline = true, modifier = Modifier.fillMaxWidth(), enabled = !opening)
             NeonButton(if (opening) "CONECTANDO…" else "ENTRAR NO CIRCUITO →", { opening = true; vm.begin() }, modifier = Modifier.fillMaxWidth(), enabled = state.selectedThemes.size == 5 && !opening)
@@ -471,6 +475,7 @@ private fun SettingRow(title: String, description: String, checked: Boolean, onC
 
 @Composable
 private fun PlayPage(vm: GameViewModel) {
+    if (vm.state.mode == Mode.MAGAZINE) { MagazinePlayPage(vm); return }
     val state = vm.state
     val session = state.save.sessions[keyFor(state.mode, state.level)]
     if (session == null) {
@@ -484,7 +489,7 @@ private fun PlayPage(vm: GameViewModel) {
     val listState = rememberLazyListState()
     val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
     var selectionRequest by remember { mutableIntStateOf(0) }
-    fun selectAndType(id: String) { vm.selectWord(id); selectionRequest++ }
+    fun selectAndType(id: String,cell: String?=null) { vm.selectWord(id,cell); selectionRequest++ }
     LaunchedEffect(selectionRequest) {
         if (selectionRequest > 0 && !session.completed && word.id !in session.solved) {
             answerFocus.requestFocus()
@@ -523,7 +528,7 @@ private fun PlayPage(vm: GameViewModel) {
             }
         }
         if (session.completed) item { VictoryPanel(session, vm) }
-        item { NativePuzzleBoard(session, word, ::selectAndType) }
+        item { NativePuzzleBoard(session, word, state.cursor, ::selectAndType) }
         item { Eyebrow(if (state.mode == Mode.CLASSIC) "PISTAS DA FREQUÊNCIA" else "PISTAS / DE CIMA PARA BAIXO") }
         items(session.puzzle.words, key = { it.id }) { clue ->
             val solved = clue.id in session.solved
@@ -545,7 +550,7 @@ private fun PlayPage(vm: GameViewModel) {
                     TextButton(onClick = { keyboard?.hide(); focus.clearFocus() }, modifier = Modifier.height(28.dp).semantics { contentDescription = "Fechar teclado" }) { Text("⌄", color = Amber, fontSize = 20.sp) }
                 }
                 Text(word.clue, fontSize = 15.sp, lineHeight = 21.sp, color = Ink)
-                OutlinedTextField(value = answer, onValueChange = vm::updateDraft, label = { Text("Sua resposta", fontSize = 12.sp) }, supportingText = { Text("Letras conectadas: $connectedPattern", fontFamily = FontFamily.Monospace, fontSize = 10.sp, color = Violet) }, singleLine = true, enabled = word.id !in session.solved, modifier = Modifier.fillMaxWidth().focusRequester(answerFocus).semantics { contentDescription = "Resposta para pista ${word.number}" }, textStyle = MaterialTheme.typography.bodyLarge.copy(color = Amber, fontFamily = FontFamily.Monospace, letterSpacing = 2.sp), shape = Corners, keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Characters, autoCorrectEnabled = false, imeAction = ImeAction.Done), keyboardActions = KeyboardActions(onDone = { confirm() }))
+                GridKeyboardInput(vm, answerFocus, ImeAction.Done) { confirm() }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     NeonButton("CONECTAR →", { confirm() }, modifier = Modifier.weight(1f), enabled = word.id !in session.solved)
                     NeonButton("DICA ${(3 - session.hints).coerceAtLeast(0)}/3", { vm.hint() }, outline = true, enabled = word.id !in session.solved && session.hints < 3, modifier = Modifier.semantics { contentDescription = "Revelar uma letra, ${(3 - session.hints).coerceAtLeast(0)} dicas restantes" })
@@ -556,6 +561,81 @@ private fun PlayPage(vm: GameViewModel) {
     }
 }
 
+@Composable
+private fun MagazinePlayPage(vm: GameViewModel) {
+    val session=vm.state.session?:return
+    val word=session.puzzle.words.firstOrNull { it.id==vm.state.activeWordId }?:session.puzzle.words.first()
+    val focus=LocalFocusManager.current;val keyboard=LocalSoftwareKeyboardController.current
+    val answerFocus=remember { FocusRequester() };val listState=rememberLazyListState()
+    val keyboardVisible=WindowInsets.ime.getBottom(LocalDensity.current)>0
+    var selectionRequest by remember { mutableIntStateOf(0) }
+    var feedback by remember(session.puzzle.id) { mutableStateOf("") }
+    LaunchedEffect(session.values) { feedback="" }
+    fun selectAndType(id: String,cell: String?=null) { vm.selectWord(id,cell);selectionRequest++ }
+    LaunchedEffect(selectionRequest) {
+        if(selectionRequest>0&&!session.completed) { answerFocus.requestFocus();keyboard?.show();listState.scrollToItem(1) }
+    }
+    val fill=Engine.gridFill(session)
+    fun nextWord() { vm.nextWord();selectionRequest++ }
+    Column(Modifier.fillMaxSize()) {
+        LazyColumn(Modifier.weight(1f).fillMaxWidth().padding(horizontal=12.dp),state=listState,contentPadding=PaddingValues(vertical=10.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            item {
+                if(!keyboardVisible) Column(verticalArrangement=Arrangement.spacedBy(8.dp)) {
+                    Eyebrow("CLÁSSICO / ${session.puzzle.difficulty.uppercase()}")
+                    Text("Fase ${session.puzzle.level} · Cruzadas de revista",fontSize=21.sp,lineHeight=27.sp)
+                    Text("Toque em uma pista ou casa. Preencha livremente e confira só a grade completa. Nenhum erro será apontado.",color=Muted,fontSize=12.sp,lineHeight=18.sp)
+                }
+            }
+            item { NativeMagazineBoard(session,word,vm.state.cursor,::selectAndType) }
+            if(session.completed) item { VictoryPanel(session,vm) }
+            item { NeonButton("← SALVAR E VOLTAR AO MAPA",{ keyboard?.hide();focus.clearFocus();vm.navigate(Screen.MAP) },outline=true,modifier=Modifier.fillMaxWidth()) }
+        }
+        if(!session.completed) Column(Modifier.fillMaxWidth().background(Panel).padding(10.dp),verticalArrangement=Arrangement.spacedBy(5.dp)) {
+            Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically) {
+                Text("${word.number} ${if(word.direction=="across") "→ HORIZONTAL" else "↓ VERTICAL"} · ${word.answer.length} LETRAS",fontSize=10.sp,color=Amber,modifier=Modifier.weight(1f))
+                TextButton(onClick={keyboard?.hide();focus.clearFocus()},modifier=Modifier.height(26.dp).semantics { contentDescription="Fechar teclado" }) { Text("⌄",color=Amber,fontSize=20.sp) }
+            }
+            Text(word.clue,color=Ink,fontSize=14.sp,lineHeight=18.sp)
+            GridKeyboardInput(vm, answerFocus, ImeAction.Next) { nextWord() }
+            Row(horizontalArrangement=Arrangement.spacedBy(8.dp)) {
+                NeonButton("PRÓXIMA PALAVRA →",{nextWord()},outline=true,modifier=Modifier.weight(1f))
+                NeonButton("DICA ${(3-session.hints).coerceAtLeast(0)}/3",{vm.hint()},outline=true,enabled=session.hints<3,modifier=Modifier.semantics { contentDescription="Revelar uma letra, ${(3-session.hints).coerceAtLeast(0)} dicas restantes" })
+            }
+            NeonButton("CONFERIR GRADE COMPLETA",{
+                keyboard?.hide();focus.clearFocus()
+                feedback=when(vm.checkGrid()) { "retry"->"A grade ainda não está correta. Revise suas respostas e confira novamente.";"incomplete"->"Preencha todas as casas antes de conferir.";else->"" }
+            },enabled=fill.full,modifier=Modifier.fillMaxWidth())
+            if(feedback.isNotEmpty()) Text(feedback,color=Muted,fontSize=11.sp,lineHeight=15.sp,modifier=Modifier.semantics { contentDescription="Resultado da conferência" })
+            else if(!keyboardVisible) Text(if(fill.full) "Grade preenchida. Você já pode conferir." else "A conferência libera com todas as casas preenchidas.",color=Muted,fontSize=10.sp,lineHeight=14.sp)
+        }
+    }
+}
+
+/** Android IME connection only; all visible text is drawn in the grid cells. */
+@Composable
+private fun GridKeyboardInput(vm: GameViewModel,focus: FocusRequester,action: ImeAction,onConfirm: ()->Unit) {
+    val session=vm.state.session?:return
+    val word=session.puzzle.words.firstOrNull { it.id==vm.state.activeWordId }?:return
+    val text=Engine.wordCells(word).joinToString("") { session.values[it.key]?:" " }
+    val cursor=vm.state.cursor.coerceIn(0,word.answer.lastIndex)
+    BasicTextField(value=TextFieldValue(text,TextRange(cursor,cursor+1)),onValueChange={input ->
+        when {
+            input.text.length==word.answer.length -> vm.updateGridDraft(input.text,input.selection.end)
+            input.text.length==word.answer.length-1 &&
+                (input.text==text.removeRange(cursor,cursor+1) ||
+                    (cursor>0 && input.text==text.removeRange(cursor-1,cursor))) -> vm.eraseGridCell()
+            input.text.startsWith(text.take(cursor)) && input.text.endsWith(text.drop(cursor+1)) &&
+                input.text.length>word.answer.length -> {
+                val inserted=Engine.normalizeAnswer(input.text.substring(cursor,input.text.length-(text.length-cursor-1)))
+                val updated=text.toCharArray()
+                inserted.take(updated.size-cursor).forEachIndexed { index,letter -> updated[cursor+index]=letter }
+                vm.updateGridDraft(updated.concatToString(),cursor+inserted.length)
+            }
+            else -> vm.updateDraft(input.text)
+        }
+    },enabled=word.id !in session.solved,singleLine=true,modifier=Modifier.size(1.dp).alpha(0f).focusRequester(focus).semantics { contentDescription="Resposta para pista ${word.number}" },keyboardOptions=KeyboardOptions(capitalization=KeyboardCapitalization.Characters,autoCorrectEnabled=false,imeAction=action),keyboardActions=KeyboardActions(onDone={onConfirm()},onNext={onConfirm()}))
+}
+
 private fun cells(word: PuzzleWord): List<Cell> = Engine.wordCells(word)
 private fun cellKey(cell: Cell) = "${cell.row}:${cell.col}"
 private fun answerPrefix(session: Session, word: PuzzleWord): String = cells(word).map { session.values[cellKey(it)] ?: "" }.takeWhile { it.isNotEmpty() }.joinToString("")
@@ -563,7 +643,7 @@ private fun stars(session: Session) = Engine.getStars(session)
 private fun score(session: Session) = Engine.getScore(session)
 
 @Composable
-private fun NativePuzzleBoard(session: Session, selected: PuzzleWord, selectWord: (String) -> Unit) {
+private fun NativePuzzleBoard(session: Session, selected: PuzzleWord, cursor: Int, selectWord: (String,String?) -> Unit) {
     var zoom by rememberSaveable(session.puzzle.id) { mutableIntStateOf(0) }
     val all = session.puzzle.words.flatMap(::cells).map(::cellKey).toSet()
     val active = cells(selected).map(::cellKey).toSet()
@@ -584,7 +664,7 @@ private fun NativePuzzleBoard(session: Session, selected: PuzzleWord, selectWord
                     session.puzzle.words.forEach { word ->
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(word.number.toString().padStart(2, '0'), color = Muted, fontSize = 9.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(23.dp))
-                            cells(word).forEach { cell -> BoardCell(cellKey(cell), session, active, solved, null, cellSize) { selectWord(word.id) } }
+                            cells(word).forEach { cell -> BoardCell(cellKey(cell), session, active, solved, null, cellSize,cell.key==cells(selected).getOrNull(cursor)?.key) { selectWord(word.id,cell.key) } }
                             if (word.id in session.solved) Text(" ✓", color = Amber, fontSize = 12.sp)
                         }
                     }
@@ -594,10 +674,10 @@ private fun NativePuzzleBoard(session: Session, selected: PuzzleWord, selectWord
                             repeat(session.puzzle.cols) { col ->
                                 val key = "$row:$col"
                                 if (key !in all) Spacer(Modifier.size(cellSize))
-                                else BoardCell(key, session, active, solved, numbers[key], cellSize) {
+                                else BoardCell(key, session, active, solved, numbers[key], cellSize,key==cells(selected).getOrNull(cursor)?.key) {
                                     val matching = session.puzzle.words.filter { candidate -> cells(candidate).any { cellKey(it) == key } }
                                     val next = if (selected in matching && matching.size > 1) matching.first { it.id != selected.id } else matching.firstOrNull()
-                                    next?.let { selectWord(it.id) }
+                                    next?.let { selectWord(it.id,key) }
                                 }
                             }
                         }
@@ -614,10 +694,10 @@ private fun NativePuzzleBoard(session: Session, selected: PuzzleWord, selectWord
 }
 
 @Composable
-private fun BoardCell(key: String, session: Session, active: Set<String>, solved: Set<String>, number: Int?, size: androidx.compose.ui.unit.Dp, onClick: () -> Unit) {
+private fun BoardCell(key: String, session: Session, active: Set<String>, solved: Set<String>, number: Int?, size: androidx.compose.ui.unit.Dp, cursor: Boolean, onClick: () -> Unit) {
     val isSolved = key in solved
     val isActive = key in active
-    Box(Modifier.size(size).clip(RoundedCornerShape(2.dp)).background(when { isSolved -> Amber.copy(alpha = .14f); isActive -> Amber.copy(alpha = .10f); else -> Color(0xFF2D2633) }).border(1.dp, if (isSolved || isActive) Amber.copy(alpha = .55f) else Color(0xFF4C3C53), RoundedCornerShape(2.dp)).clickable(onClick = onClick).semantics { contentDescription = "${if (number != null) "Palavra $number, " else ""}casa ${key.replace(':', ',')}, ${session.values[key] ?: "vazia"}" }, contentAlignment = Alignment.Center) {
+    Box(Modifier.size(size).clip(RoundedCornerShape(2.dp)).background(when { isSolved -> Amber.copy(alpha = .14f); isActive -> Amber.copy(alpha = .10f); else -> Color(0xFF2D2633) }).border(if(cursor) 2.5.dp else 1.dp, if (isSolved || isActive) Amber.copy(alpha = if(cursor) 1f else .55f) else Color(0xFF4C3C53), RoundedCornerShape(2.dp)).clickable(onClick = onClick).semantics { contentDescription = "${if (number != null) "Palavra $number, " else ""}casa ${key.replace(':', ',')}, ${session.values[key] ?: "vazia"}" }, contentAlignment = Alignment.Center) {
         if (number != null) Text(number.toString(), color = Muted, fontSize = 8.sp, modifier = Modifier.align(Alignment.TopStart).padding(start = 2.dp))
         Text(session.values[key] ?: "", color = if (isSolved || isActive || session.revealed.containsKey(key)) Amber else Ink, fontFamily = FontFamily.Monospace, fontSize = 14.sp)
     }
@@ -692,6 +772,17 @@ private fun ProfileArt(id: String, modifier: Modifier = Modifier) {
 
 @Composable
 private fun MiniBoard(mode: Mode, modifier: Modifier = Modifier) {
+    if(mode==Mode.MAGAZINE) {
+        val paper=Color(0xFFFFFDF7);val line=Color(0xFF79654D)
+        Column(modifier.background(paper).border(1.dp,line)) {
+            listOf(listOf("↓","↓","↓","↓"),listOf("→","S","O","L"),listOf("→","A","S","A"),listOf("→","R","I","O")).forEachIndexed { row,values ->
+                Row(Modifier.weight(1f).fillMaxWidth()) {
+                    values.forEachIndexed { col,value -> Box(Modifier.weight(1f).fillMaxHeight().background(if(row==0||col==0) Color(0xFFE9E5DC) else paper).border(.5.dp,line),contentAlignment=Alignment.Center) { Text(value,fontSize=8.sp,color=Color(0xFF302A23),fontWeight=FontWeight.Bold) } }
+                }
+            }
+        }
+        return
+    }
     Canvas(modifier) {
         val unit = size.width / 5f
         repeat(5) { row -> repeat(5) { col ->

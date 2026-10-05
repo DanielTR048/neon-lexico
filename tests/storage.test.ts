@@ -113,7 +113,7 @@ test('blocked or corrupted browser storage recovers gracefully', () => {
       value: { getItem: (key: string) => memory.get(key) ?? null, setItem: (key: string, value: string) => memory.set(key, value) },
     });
     const recovered = loadSave();
-    assert.deepEqual(recovered.results, { classic: {}, cascade: {} });
+    assert.deepEqual(recovered.results, { classic: {}, magazine: {}, cascade: {} });
     assert.equal(saveGame(recovered), true);
     assert.deepEqual(loadSave(), recovered);
   } finally {

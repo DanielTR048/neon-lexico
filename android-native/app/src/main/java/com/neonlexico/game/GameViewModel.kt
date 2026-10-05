@@ -65,7 +65,38 @@ class GameViewModel(application: Application): AndroidViewModel(application) {
             }.onFailure { state=state.copy(error="O sinal falhou. Sorteie outros temas e tente novamente.") }
         }
     }
-    fun selectWord(id: String) { if(state.session?.puzzle?.words?.any { it.id==id }==true) state=state.copy(activeWordId=id) }
+    fun selectWord(id: String,cell: String?=null) {
+        val session=state.session?:return;val word=session.puzzle.words.firstOrNull { it.id==id }?:return
+        val cells=Engine.wordCells(word)
+        val cursor=if(cell!=null) cells.indexOfFirst { it.key==cell }.coerceAtLeast(0) else cells.indexOfFirst { session.values[it.key].isNullOrEmpty() }.coerceAtLeast(0)
+        state=state.copy(activeWordId=id,cursor=cursor)
+    }
+    fun updateGridDraft(value: String,nextCursor: Int) {
+        val session=state.session?:return;val word=session.puzzle.words.firstOrNull { it.id==state.activeWordId }?:return
+        if(session.completed||word.id in session.solved)return
+        val values=session.values.toMutableMap()
+        Engine.wordCells(word).forEachIndexed { index,cell ->
+            if(cell.key !in session.revealed) {
+                val letter=Engine.normalizeAnswer(value.getOrNull(index)?.toString().orEmpty())
+                if(letter.isEmpty())values.remove(cell.key) else values[cell.key]=letter
+            }
+        }
+        writeGridValues(session,values,nextCursor.coerceIn(0,word.answer.lastIndex))
+    }
+    fun eraseGridCell() {
+        val session=state.session?:return;val word=session.puzzle.words.firstOrNull { it.id==state.activeWordId }?:return
+        if(session.completed||word.id in session.solved)return
+        val cells=Engine.wordCells(word);var index=state.cursor.coerceIn(cells.indices)
+        if(session.values[cells[index].key].isNullOrEmpty()||cells[index].key in session.revealed)index--
+        while(index>=0&&cells[index].key in session.revealed)index--
+        if(index<0)return
+        writeGridValues(session,session.values-cells[index].key,index)
+    }
+    private fun writeGridValues(session: Session,values: Map<String,String>,cursor: Int) {
+        val next=session.copy(values=values)
+        state=state.copy(save=state.save.copy(sessions=state.save.sessions+("${state.mode.wire}:${state.level}" to next)),cursor=cursor)
+        revision++;persist()
+    }
     fun updateDraft(value: String) {
         if(state.activeProfileId==null||state.screen!=Screen.PLAY) return
         val session=state.session?:return
@@ -80,15 +111,32 @@ class GameViewModel(application: Application): AndroidViewModel(application) {
         }
         if(values==session.values) return
         val next=session.copy(values=values)
-        state=state.copy(save=state.save.copy(sessions=state.save.sessions+("${state.mode.wire}:${state.level}" to next)))
+        state=state.copy(save=state.save.copy(sessions=state.save.sessions+("${state.mode.wire}:${state.level}" to next)),cursor=input.length.coerceAtMost(word.answer.lastIndex))
         revision++;persist()
     }
     fun submitAnswer(answer: String) {
+        if(state.mode==Mode.MAGAZINE) {
+            updateDraft(answer)
+            nextWord()
+            return
+        }
         val session=state.session?:return;val result=Engine.submitWord(session,state.activeWordId,answer)
         afterChange(result.session)
         if(!result.correct) state=state.copy(error="Ainda não é essa conexão. Confira a pista e tente de novo.")
     }
+    fun nextWord() {
+        val session=state.session?:return
+        val index=session.puzzle.words.indexOfFirst { it.id==state.activeWordId }
+        val ordered=session.puzzle.words.drop(index+1)+session.puzzle.words.take(index+1)
+        val next=ordered.firstOrNull { word -> Engine.wordCells(word).any { session.values[it.key].isNullOrEmpty() } }?:ordered.firstOrNull()
+        if(next!=null) selectWord(next.id)
+    }
     fun hint() { val session=state.session?:return;afterChange(Engine.useHint(session,state.activeWordId)) }
+    fun checkGrid(): String {
+        val session=state.session?:return "incomplete"
+        if(state.mode!=Mode.MAGAZINE) return "incomplete"
+        val result=Engine.checkGrid(session);afterChange(result.session);return result.status
+    }
     private fun afterChange(session: Session) {
         val word=state.activeWordId.takeIf { id -> session.puzzle.words.any { it.id==id }&&id !in session.solved }?:session.puzzle.words.firstOrNull { it.id !in session.solved }?.id?:state.activeWordId
         state=state.copy(save=Engine.recordCompletion(state.save,session),activeWordId=word);revision++;persist()

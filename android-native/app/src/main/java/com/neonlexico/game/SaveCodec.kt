@@ -28,7 +28,9 @@ object SaveCodec {
             PuzzleWord(identifier(w,"id"),answer,text(w,"clue",600),integer(w,"difficulty",1,3),themeId,text(w,"themeName",100),row,col,direction,integer(w,"number",1,100))
         }
         require(words.map { it.id }.distinct().size==words.size)
-        val p=Puzzle(text(obj,"id",700),mode,level,themes,words,rows,cols,text(obj,"difficulty",60));solution(p);return p
+        val p=Puzzle(text(obj,"id",700),mode,level,themes,words,rows,cols,text(obj,"difficulty",60));val letters=solution(p)
+        if(mode==Mode.MAGAZINE) require(words.all { word -> val clue=Engine.clueCell(word);clue.row in 0 until rows&&clue.col in 0 until cols&&clue.key !in letters })
+        return p
     }
     private fun solution(puzzle: Puzzle): Map<String,String> { val cells=mutableMapOf<String,String>();puzzle.words.forEach { w -> Engine.wordCells(w).forEachIndexed { i,c -> val letter=w.answer[i].toString();require(cells[c.key]==null||cells[c.key]==letter);cells[c.key]=letter } };return cells }
     private fun letters(obj: JSONObject,solution: Map<String,String>,revealed: Boolean): Map<String,String> {
@@ -39,6 +41,7 @@ object SaveCodec {
         keys(obj,setOf("puzzle","values","solved","revealed","mistakes","hints","elapsed","completed"));val puzzle=puzzle(obj.getJSONObject("puzzle"));val solution=solution(puzzle)
         val solved=strings(obj.getJSONArray("solved"),puzzle.words.size);require(solved.all { id -> puzzle.words.any { it.id==id } })
         val completed=bool(obj,"completed");require(completed==(solved.size==puzzle.words.size))
+        if(puzzle.mode==Mode.MAGAZINE&&!completed) require(solved.isEmpty())
         val values=letters(obj.getJSONObject("values"),solution,false);val revealed=letters(obj.getJSONObject("revealed"),solution,true)
         require(revealed.all { (key,value) -> values[key]==value })
         for(w in puzzle.words.filter { it.id in solved }) Engine.wordCells(w).forEachIndexed { i,c -> require(values[c.key]==w.answer[i].toString()&&revealed[c.key]==w.answer[i].toString()) }
@@ -47,13 +50,13 @@ object SaveCodec {
     fun decode(json: String): SaveData {
         require(json.toByteArray(Charsets.UTF_8).size<=MAX_BYTES)
         val obj=JSONObject(json);keys(obj,setOf("version","seed","results","sessions","settings"));require(integer(obj,"version",1,1)==1)
-        val seed=text(obj,"seed",128);val resultsObj=obj.getJSONObject("results");keys(resultsObj,Mode.entries.map { it.wire }.toSet())
+        val seed=text(obj,"seed",128);val resultsObj=obj.getJSONObject("results");keys(resultsObj,if(resultsObj.has("magazine")) Mode.entries.map { it.wire }.toSet() else setOf("classic","cascade"))
         val results=Mode.entries.associateWith { mode ->
-            val data=resultsObj.getJSONObject(mode.wire);require(data.length()<=100)
+            val data=if(resultsObj.has(mode.wire)) resultsObj.getJSONObject(mode.wire) else JSONObject();require(data.length()<=100)
             data.keys().asSequence().associateWith { level -> require(level.matches(Regex("(?:[1-9]\\d?|100)")));val r=data.getJSONObject(level);keys(r,setOf("stars","score","seconds"));LevelResult(integer(r,"stars",0,3),integer(r,"score",0,10_000_000),integer(r,"seconds",0,1_000_000_000,false)) }
         }
-        val sessionsObj=obj.getJSONObject("sessions");require(sessionsObj.length()<=200)
-        val sessions=sessionsObj.keys().asSequence().associateWith { key -> require(key.matches(Regex("(classic|cascade):(?:[1-9]\\d?|100)")));val s=session(sessionsObj.getJSONObject(key));require(key=="${s.puzzle.mode.wire}:${s.puzzle.level}");s }
+        val sessionsObj=obj.getJSONObject("sessions");require(sessionsObj.length()<=300)
+        val sessions=sessionsObj.keys().asSequence().associateWith { key -> require(key.matches(Regex("(classic|magazine|cascade):(?:[1-9]\\d?|100)")));val s=session(sessionsObj.getJSONObject(key));require(key=="${s.puzzle.mode.wire}:${s.puzzle.level}");s }
         val settings=obj.getJSONObject("settings");keys(settings,setOf("sound","reducedMotion"))
         return SaveData(seed,results,sessions,Settings(bool(settings,"sound"),bool(settings,"reducedMotion")))
     }

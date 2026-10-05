@@ -6,11 +6,11 @@ Palavras cruzadas em português com visual cyberpunk, grades de revista e aplica
 
 ## Jogar e progredir
 
-São 100 fases de Cruzadas e 100 de Cascata. Cada fase sorteia cinco temas de um catálogo de 44 temas. Nas primeiras fases, as pistas são diretas e as palavras têm até seis letras. Conforme você avança, entram palavras mais longas, assuntos mais difíceis e tabuleiros maiores: Cruzadas cresce de 12 a 30 respostas; Cascata de 5 a 14 linhas.
+São 300 fases: 100 de Palavras cruzadas, 100 de Clássico e 100 de Efeito cascata. Cada fase sorteia cinco temas de um catálogo de 44 temas. Nas primeiras fases, as pistas são diretas e as palavras têm até seis letras. Conforme você avança, entram palavras mais longas, assuntos mais difíceis e tabuleiros maiores: os dois modos de cruzadas crescem de 12 a 30 respostas; Cascata de 5 a 14 linhas.
 
-Nas Cruzadas, selecione uma pista ou toque na grade numerada, digite a resposta e confirme. As casas compartilhadas mostram a mesma letra nas duas palavras. Os espaços pretos separam as respostas como nas revistas. Na Cascata, letras de uma resposta correta aparecem em todas as linhas abaixo.
+Em Palavras cruzadas, selecione uma pista ou toque na grade numerada, digite a resposta e confirme. As casas compartilhadas mostram a mesma letra nas duas palavras. No novo Clássico, as pistas ficam dentro das casas cinza, com setas horizontais e verticais, em uma grade de revista. As letras ficam livres para edição e a conferência só libera quando toda a grade está preenchida. Se houver algum erro, o jogo pede para revisar sem identificar casas ou palavras erradas. Na Cascata, letras de uma resposta correta aparecem em todas as linhas abaixo.
 
-No celular, tocar em uma casa abre o teclado e mostra a pista selecionada abaixo da grade, junto ao campo de resposta. A pista acompanha a seleção e permanece acima do teclado; tocar novamente em um cruzamento alterna entre horizontal e vertical. Use a seta para recolher o teclado e explorar o tabuleiro. Esse fluxo também está disponível no aplicativo Android.
+Nos três modos, toque na casa e digite diretamente na grade, sem outro campo de resposta. O cursor começa na casa escolhida e avança conforme você escreve. No celular, a pista selecionada permanece abaixo da grade e acima do teclado; tocar novamente em um cruzamento alterna entre horizontal e vertical. Use a seta para recolher o teclado e explorar o tabuleiro. Esse fluxo também está disponível no aplicativo Android.
 
 Cada fase permite **três dicas**. Uma dica revela uma letra e ajuda imediatamente nos cruzamentos; na Cascata, revela todas as ocorrências dessa letra nas linhas inferiores, mesmo antes de resolver a palavra. O limite persiste ao fechar e reabrir o jogo. Dicas e erros afetam estrelas e pontuação; não há vidas ou contagem regressiva. Rejogar uma fase concluída preserva os melhores resultados.
 
@@ -26,7 +26,7 @@ O jogo salva localmente mesmo offline. Com conexão, envia as alterações e bus
 
 ## Android e offline
 
-O APK é um aplicativo Kotlin/Jetpack Compose, com interface e motor nativos. Baixe pelo botão da seleção de perfis e abra o arquivo para instalar. O Android pode pedir autorização para instalar aplicativos pelo navegador. O download não instala automaticamente.
+O APK é um aplicativo Kotlin/Jetpack Compose, com interface e motor nativos. A versão 1.1.0 inclui os três modos. Para atualizar, baixe pelo botão da seleção de perfis e instale sobre a versão anterior, sem desinstalar: os perfis e o progresso permanecem. O Android pode pedir autorização para instalar aplicativos pelo navegador. O download não instala automaticamente.
 
 A versão web também funciona offline após uma primeira abertura online completa. No Android, pode ser instalada como PWA pelo navegador; no iPhone, use Compartilhar → Adicionar à Tela de Início. A instalação nativa é detalhada em [android-native/README.md](android-native/README.md).
 
@@ -57,6 +57,6 @@ npm run test:e2e
 ./android-native/BUILD-ANDROID.ps1 -Release
 ```
 
-Testes cobrem as 200 fases, várias sementes, legalidade dos cruzamentos, conclusão, curva de dificuldade, limite e propagação de dicas, persistência e backups. Playwright exercita desktop e celular emulado, perfis, conflitos de sincronização e abertura offline. Android usa testes de domínio e Compose/Robolectric, paridade de partidas e formato de salvamento com a versão web. A emulação não substitui a instalação em um aparelho físico.
+Testes cobrem as 300 fases, várias sementes, legalidade dos cruzamentos e das pistas embutidas, conferência da grade completa, curva de dificuldade, limite e propagação de dicas, persistência e backups. Playwright exercita desktop e celular emulado, digitação na casa escolhida, perfis, conflitos de sincronização e abertura offline. Android usa testes de domínio e Compose/Robolectric, paridade de partidas e formato de salvamento com a versão web. A emulação não substitui a instalação em um aparelho físico.
 
 Arquivos principais: `src/content.ts`, `src/engine.ts`, `src/storage.ts`, `src/sync.ts`, `src/main.ts` e `android-native/`. O serviço compartilhado de sincronização fica no repositório [Lexicon](https://github.com/DanielTR048/lexicon), com armazenamento separado por jogo e perfil.

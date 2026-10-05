@@ -1,7 +1,8 @@
 import { chromium, devices, expect } from '@playwright/test';
 import fs from 'node:fs';
 import { createHash } from 'node:crypto';
-import { importSave } from '../src/storage';
+import { createSave, importSave } from '../src/storage';
+import { createSession, generatePuzzle, wordCells } from '../src/engine';
 import type { SaveData } from '../src/types';
 
 const url = process.env.NEON_PUBLIC_URL || 'https://danieltr048.github.io/neon-lexico/';
@@ -16,6 +17,8 @@ try {
   await expect(page.getByRole('link', { name: 'Baixar app Android' })).toHaveAttribute('href', './android/neon-lexico.apk');
   await page.screenshot({ path: directory + '/profiles.png', fullPage: true });
   await page.getByRole('button', { name: 'Entrar como Daniel' }).click();
+  await expect(page.locator('.mode-card')).toHaveCount(3);
+  await expect(page.locator('.magazine-art')).toBeVisible();
   await page.locator('[data-action="start"][data-mode="classic"]').click();
   await page.locator('[data-action="begin"]').click();
   await expect(page.locator('#answer-input')).toBeVisible();
@@ -26,6 +29,10 @@ try {
   const cell = page.locator(`[data-cell="${selected.row}:${selected.col}"]`);
   await cell.click();
   await expect(page.locator('#answer-input')).toBeFocused();
+  if (await page.locator('#answer-input').evaluate(input => getComputedStyle(input).opacity) !== '0') throw new Error('Separate answer field is visible');
+  await page.keyboard.type('Z');
+  const typed = (await read()).sessions['classic:1'];
+  if (typed.values[`${selected.row}:${selected.col}`] !== 'Z') throw new Error('Typing did not reach the selected grid cell');
   await expect(page.locator('.word-editor.editing')).toBeVisible();
   const activeId = await page.locator('.word-clue.active').getAttribute('data-word');
   await expect(page.locator('#active-clue')).toHaveText(first.puzzle.words.find(word => word.id === activeId)!.clue);
@@ -56,6 +63,32 @@ try {
   await expect(page.getByRole('button', { name: 'Revelar uma letra', exact: true })).toBeDisabled();
   await context.setOffline(false); await context.close();
 
+  const magazineSave = createSave();
+  const magazine = createSession(generatePuzzle(magazineSave.seed, 'magazine', 1));
+  for (const word of magazine.puzzle.words) wordCells(word).forEach((cell, index) => magazine.values[cell.key] = word.answer[index]);
+  const wrong = magazine.puzzle.words[0], wrongCell = wordCells(wrong)[0];
+  const correctLetter = magazine.values[wrongCell.key];
+  magazine.values[wrongCell.key] = correctLetter === 'Z' ? 'X' : 'Z';
+  magazineSave.sessions['magazine:1'] = magazine;
+  const paper = await browser.newContext({ ...devices['Pixel 7'] });
+  await paper.addInitScript(data => localStorage.setItem('neon-lexico:v1', JSON.stringify(data)), magazineSave);
+  const grid = await paper.newPage(); await grid.goto(url);
+  grid.on('pageerror', error => errors.push(error.message));
+  await grid.getByRole('button', { name: 'Entrar como Daniel' }).click();
+  await grid.locator('[data-action="start"][data-mode="magazine"]').click();
+  await expect(grid.locator('.magazine-clue-cell')).not.toHaveCount(0);
+  await expect(grid.locator('.word-clue.is-solved')).toHaveCount(0);
+  await grid.locator('[data-action="check-grid"]').click();
+  await expect(grid.locator('#grid-feedback')).toContainText('A grade ainda não está correta');
+  await expect(grid.locator('[data-cell].wrong, [data-cell].solved')).toHaveCount(0);
+  await grid.locator(`[data-cell="${wrongCell.key}"]`).click();
+  await grid.keyboard.type(correctLetter);
+  await grid.getByRole('button', { name: 'Fechar teclado', exact: true }).click();
+  await grid.locator('[data-action="check-grid"]').click();
+  await expect(grid.locator('.success-panel')).toBeVisible();
+  await grid.screenshot({ path: directory + '/magazine-checked.png', fullPage: true });
+  await paper.close();
+
   const proof = process.env.NEON_SYNC_PROOF_PATH;
   if (proof && fs.existsSync(proof)) {
     const save = importSave(fs.readFileSync(proof, 'utf8'));
@@ -78,5 +111,5 @@ try {
   const hash = (data: Buffer) => createHash('sha256').update(data).digest('hex');
   if (hash(local) !== hash(bytes)) throw new Error('Published APK checksum mismatch');
   if (errors.length) throw new Error(errors.join('\n'));
-  console.log(JSON.stringify({ url, profiles: 'separate', startingWords: 12, hints: 3, tapToType: 'passed', offline: 'passed', androidNativeSave: proof ? 'verified' : 'not supplied', apkBytes: bytes.length, apkSha256: hash(bytes), pageErrors: errors.length }));
+  console.log(JSON.stringify({ url, profiles: 'separate', startingWords: 12, hints: 3, directGridTyping: 'passed', magazineFinalCheck: 'passed', offline: 'passed', androidNativeSave: proof ? 'verified' : 'not supplied', apkBytes: bytes.length, apkSha256: hash(bytes), pageErrors: errors.length }));
 } finally { await browser.close(); }

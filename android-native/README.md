@@ -1,6 +1,8 @@
 # Neon Léxico para Android
 
-Aplicativo Kotlin e Jetpack Compose, com tabuleiros, teclado, perfis, campanhas e persistência nativos. O catálogo e as fontes acompanham o APK; as partidas funcionam offline. O mesmo código de conexão LEX- conecta Daniel e Larissa ao progresso do site. As campanhas de Cruzadas, Cascata e Caça-palavras são separadas.
+Aplicativo Kotlin e Jetpack Compose, com tabuleiros, teclado, perfis, campanhas e persistência nativos. O catálogo e as fontes acompanham o APK; as partidas funcionam offline. O mesmo código de conexão LEX- conecta Daniel e Larissa ao progresso do site. Palavras cruzadas, Clássico de revista e Efeito cascata têm 100 fases cada; a campanha de Caça-palavras permanece separada.
+
+Nos três modos, tocar em uma casa posiciona o cursor e abre o teclado para escrever diretamente na grade. A pista fica acima do teclado. O Clássico tem pistas nas casas cinza e só confere a grade completa, sem apontar erros individuais.
 
 ## Windows
 
@@ -20,4 +22,4 @@ Para testar sincronização real, use `NEON_LIVE_SYNC=1` apenas com conexão dis
 
 ## Publicar APK
 
-Copie o APK release para `public/android/neon-lexico.apk`, registre seu SHA-256 e faça o build web. O botão de download está disponível na seleção de perfis e nas configurações. A instalação é feita pelo usuário após baixar; o Android pode solicitar autorização para instalar pelo navegador.
+Copie o APK release para `public/android/neon-lexico.apk`, registre seu SHA-256 e faça o build web. O botão de download está disponível na seleção de perfis e nas configurações. A instalação é feita pelo usuário após baixar; o Android pode solicitar autorização para instalar pelo navegador. Para atualizar para 1.1.0, instale sobre a versão anterior sem desinstalar, preservando perfis e progresso.

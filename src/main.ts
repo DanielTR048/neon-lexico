@@ -1,11 +1,14 @@
 import './style.css';
 import './profiles.css';
 import './mobile-game.css';
+import './magazine.css';
+import { renderMagazineBoard, renderMagazineGame } from './magazine-ui';
 import { themes } from './content';
-import { cellKey, createSession, drawThemes, generatePuzzle, getScore, getStars, normalizeAnswer, submitWord, useHint, wordCells, MAX_HINTS } from './engine';
+import { cellKey, checkGrid, createSession, drawThemes, generatePuzzle, getScore, getStars, gridFill, normalizeAnswer, submitWord, useHint, wordCells, MAX_HINTS } from './engine';
+import { MODES } from './types';
 import { exportSave, importSave, loadSave, readProfile, recordCompletion, saveGame, unlockedLevel, profileKey, type ProfileId } from './storage';
 import { getCode, formatCode, newCode, connectDevices, markDirty, syncProfile, status, conflictFor, setSyncListener, type SyncResult } from './sync';
-import { cityArt, icon, logo, modeArt } from './art';
+import { cityArt, icon, logo, modeArt, magazineArt } from './art';
 import type { Mode, PuzzleWord, Session, Theme } from './types';
 
 type View = 'home' | 'map' | 'themes' | 'stats' | 'settings' | 'help' | 'setup' | 'play';
@@ -27,12 +30,14 @@ let cursor = 0;
 let searchTerm = '';
 let revealAnimation: string[] = [];
 let editingWord = false;
+let magazineSize = 88;
+let gridMessage = '';
 let storageOkay = true;
 let toastTimer: ReturnType<typeof setTimeout>;
 let audioContext: AudioContext | undefined;
 let installEvent: (Event & { prompt(): Promise<void>; userChoice: Promise<{ outcome: string }> }) | undefined;
 const labels: Record<View, string> = { home: 'Central de jogo', map: 'Mapa de fases', themes: 'Universos', stats: 'Seu progresso', settings: 'Ajustes', help: 'Como jogar', setup: 'Sintonizar temas', play: 'Em jogo' };
-const modeName = (m: Mode) => m === 'classic' ? 'Cruzadas clássicas' : 'Efeito cascata';
+const modeName = (m: Mode) => m === 'classic' ? 'Palavras cruzadas' : m === 'magazine' ? 'Clássico' : 'Efeito cascata';
 const esc = (value: unknown) => String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]!));
 const pad = (n: number) => String(n).padStart(2, '0');
 const timeLabel = (n: number) => `${pad(Math.floor(n / 60))}:${pad(n % 60)}`;
@@ -40,7 +45,7 @@ const sessionKey = () => `${mode}:${level}`;
 const current = (): Session | undefined => save.sessions[sessionKey()];
 const activeWord = () => current()?.puzzle.words.find(word => word.id === activeWordId);
 const completedCount = (m: Mode) => Object.keys(save.results[m]).length;
-const totalCompleted = () => completedCount('classic') + completedCount('cascade');
+const totalCompleted = () => MODES.reduce((total, m) => total + completedCount(m), 0);
 const totalStars = () => Object.values(save.results).flatMap(Object.values).reduce((sum, result) => sum + result.stars, 0);
 const themeIcon = (theme: Theme) => ['shield', 'code', 'brain', 'chip', 'atom', 'book', 'bolt', 'layers'][Math.max(0, themes.findIndex(t => t.id === theme.id)) % 8];
 
@@ -62,7 +67,7 @@ function persist() {
 const dialogMarkup = '<dialog id="sync-dialog" class="sync-dialog"></dialog>';
 function pickerView() {
   const apk = import.meta.env.VITE_ANDROID_APK_URL;
-  return `<main class="profile-picker"><div class="picker-logo">${logo}<span>NEON LÉXICO</span></div><div class="eyebrow">DUAS MENTES. DUZENTAS CONEXÕES.</div><h1>Quem vai jogar hoje?</h1><p>Cada pessoa tem sua própria campanha.<br>Escolha um perfil e continue de onde parou.</p><div class="profile-cards">${players.map(player => {
+  return `<main class="profile-picker"><div class="picker-logo">${logo}<span>NEON LÉXICO</span></div><div class="eyebrow">DUAS MENTES. TREZENTAS CONEXÕES.</div><h1>Quem vai jogar hoje?</h1><p>Cada pessoa tem sua própria campanha.<br>Escolha um perfil e continue de onde parou.</p><div class="profile-cards">${players.map(player => {
     const stored = readProfile(player.id);
     const results = stored ? Object.values(stored.results).flatMap(Object.values) : [];
     return `<button class="profile-card ${player.id}" data-action="choose-profile" data-profile="${player.id}" aria-label="Entrar como ${player.name}" ${picking ? 'disabled' : ''}><span class="profile-badge">${icon(player.glyph, 64)}</span><strong>${player.name}</strong><small>${results.length} fases · ${results.reduce((sum, result) => sum + result.stars, 0)} estrelas</small></button>`;
@@ -169,7 +174,7 @@ function render() {
   document.documentElement.classList.toggle('reduce-motion', save.settings.reducedMotion);
   document.title = `Neon Léxico — ${labels[view]}`;
   const page = { home: renderHome, map: renderMap, themes: renderThemes, stats: renderStats, settings: renderSettings, help: renderHelp, setup: renderSetup, play: renderGame }[view]();
-  app.innerHTML = `<div class="app-shell"><aside class="sidebar"><button class="brand" data-view="home" aria-label="Neon Léxico, início">${logo}<span class="brand-name">NEON<span style="display:block">LÉXICO</span><small>WORD ARCADE</small></span></button><div class="side-caption">SEU TERMINAL</div><nav aria-label="Navegação principal">${navButton('home','Central de jogo','home')}${navButton('map','Mapa de fases','grid','200')}${navButton('themes','Universos','layers',String(themes.length))}${navButton('stats','Seu progresso','trophy')}</nav><div class="sidebar-bottom">${navButton('help','Como jogar','help')}${navButton('settings','Ajustes','settings')}<div class="side-system"><div class="signal-line"><span class="status-dot"></span> SISTEMA ONLINE</div><small>EST. 2086 · VERSÃO 1.0</small></div></div></aside><div class="main-wrap"><header class="topbar"><div class="breadcrumb">TERMINAL <span>/</span><b>${labels[view]}</b></div><button class="mobile-brand" data-view="home" aria-label="Neon Léxico, início">${logo} NEON LÉXICO</button><div class="top-actions"><div class="small-pill">${icon('star',12)} ${totalStars()} ESTRELAS</div><button class="icon-btn" data-action="sound" aria-label="${save.settings.sound ? 'Desativar' : 'Ativar'} som" title="Som">${icon(save.settings.sound ? 'sound' : 'mute',16)}</button><div class="avatar" title="Seu perfil local">LX</div></div></header><main id="main" class="main-content">${!storageOkay ? '<div class="save-warning">Seu navegador não está salvando. Use Ajustes → Exportar progresso.</div>' : ''}${page}<footer class="footer"><span>NEON LÉXICO © 2086<br>UMA PALAVRA. UMA NOVA CONEXÃO.</span><span class="footer-right">FEITO PARA MENTES CURIOSAS.</span></footer></main></div><nav class="mobile-nav" aria-label="Navegação no celular">${(['home','map','themes','stats','settings'] as View[]).map((v,i)=>`<button data-view="${v}" class="${v===view || v==='map'&&['setup','play'].includes(view) ? 'active' : ''}" aria-label="${labels[v]}">${icon(['home','grid','layers','trophy','settings'][i])}<span>${['Início','Fases','Universos','Progresso','Ajustes'][i]}</span></button>`).join('')}</nav></div>`;
+  app.innerHTML = `<div class="app-shell"><aside class="sidebar"><button class="brand" data-view="home" aria-label="Neon Léxico, início">${logo}<span class="brand-name">NEON<span style="display:block">LÉXICO</span><small>WORD ARCADE</small></span></button><div class="side-caption">SEU TERMINAL</div><nav aria-label="Navegação principal">${navButton('home','Central de jogo','home')}${navButton('map','Mapa de fases','grid','300')}${navButton('themes','Universos','layers',String(themes.length))}${navButton('stats','Seu progresso','trophy')}</nav><div class="sidebar-bottom">${navButton('help','Como jogar','help')}${navButton('settings','Ajustes','settings')}<div class="side-system"><div class="signal-line"><span class="status-dot"></span> SISTEMA ONLINE</div><small>EST. 2086 · VERSÃO 1.0</small></div></div></aside><div class="main-wrap"><header class="topbar"><div class="breadcrumb">TERMINAL <span>/</span><b>${labels[view]}</b></div><button class="mobile-brand" data-view="home" aria-label="Neon Léxico, início">${logo} NEON LÉXICO</button><div class="top-actions"><div class="small-pill">${icon('star',12)} ${totalStars()} ESTRELAS</div><button class="icon-btn" data-action="sound" aria-label="${save.settings.sound ? 'Desativar' : 'Ativar'} som" title="Som">${icon(save.settings.sound ? 'sound' : 'mute',16)}</button><div class="avatar" title="Seu perfil local">LX</div></div></header><main id="main" class="main-content">${!storageOkay ? '<div class="save-warning">Seu navegador não está salvando. Use Ajustes → Exportar progresso.</div>' : ''}${page}<footer class="footer"><span>NEON LÉXICO © 2086<br>UMA PALAVRA. UMA NOVA CONEXÃO.</span><span class="footer-right">FEITO PARA MENTES CURIOSAS.</span></footer></main></div><nav class="mobile-nav" aria-label="Navegação no celular">${(['home','map','themes','stats','settings'] as View[]).map((v,i)=>`<button data-view="${v}" class="${v===view || v==='map'&&['setup','play'].includes(view) ? 'active' : ''}" aria-label="${labels[v]}">${icon(['home','grid','layers','trophy','settings'][i])}<span>${['Início','Fases','Universos','Progresso','Ajustes'][i]}</span></button>`).join('')}</nav></div>`;
   app.querySelector('.topbar')?.insertAdjacentHTML('afterend', `<div class="profile-toolbar"><strong>${players.find(player => player.id === activeProfile)!.name}</strong><button class="sync-status" data-action="sync-setup">${status(activeProfile)}</button><button data-action="switch-profile">Trocar perfil</button></div>`);
   app.insertAdjacentHTML('beforeend', dialogMarkup);
   if (boardPosition) { const board = document.querySelector('#board'); if (board) { board.scrollLeft = boardPosition.left; board.scrollTop = boardPosition.top; } }
@@ -177,7 +182,7 @@ function render() {
 }
 
 function renderHome() {
-  return `<section class="hero"><div class="hero-copy"><div class="eyebrow">TRANSMISSÃO ABERTA · 2086</div><h1>O futuro é<br>um <em>enigma.</em></h1><p>Em uma cidade feita de códigos, cada palavra abre um novo caminho. Sintonize sua mente.</p><div class="hero-pills"><span>${icon('grid',12)} 200 FASES</span><span>${icon('layers',12)} ${themes.length} UNIVERSOS</span><span>${icon('bolt',12)} 2 MODOS</span></div></div><div class="hero-visual"><span class="visual-label">⌖ DISTRITO LÉXICO</span>${cityArt()}</div></section><section><div class="section-heading"><h2>Escolha sua frequência</h2><span class="meta">01 / 02 MODOS DE JOGO</span></div><div class="modes">${(['classic','cascade'] as Mode[]).map((m,i)=>`<article class="mode-card ${i?'violet':''}"><div class="mode-tag"><span class="tag-square"></span> ${i ? 'CONEXÕES EM CADEIA' : 'O CLÁSSICO, RECONECTADO'}</div><div class="card-main"><div><h3>${i?'Efeito<br>cascata':'Cruzadas<br>clássicas'}</h3><p>${i?'Uma resposta acende a próxima. Descubra palavras e libere letras nas linhas abaixo.':'Cruze ideias, conecte palavras. Resolva as pistas e complete cada espaço da grade.'}</p></div>${modeArt(!!i)}</div><div class="mode-footer"><span class="phase-count"><strong>${pad(completedCount(m))}</strong> / 100 FASES</span><button class="btn ${i?'violet':''}" data-action="start" data-mode="${m}">${completedCount(m)||save.sessions[`${m}:1`] ? 'Continuar' : 'Iniciar jornada'} ${icon('arrow',16)}</button></div></article>`).join('')}</div></section><section class="home-bottom"><div class="transmission"><div class="trans-icon">${icon('shuffle',23)}</div><div><div class="eyebrow">NENHUMA CONEXÃO É POR ACASO</div><h3>Cinco temas. Infinitas conexões.</h3><p>Heróis, ciência, código e muito mais. A cada fase, cinco universos se encontram no seu tabuleiro.</p></div></div><div class="mini-stats"><div class="mini-stat"><b>${pad(totalCompleted())}<span style="font-size:13px;color:#8f7b9c"> / 200</span></b><span>FASES CONCLUÍDAS</span></div><div class="mini-stat"><b>${icon('star',18)}${totalStars()}</b><span>ESTRELAS CONQUISTADAS</span></div></div></section>`;
+  return `<section class="hero"><div class="hero-copy"><div class="eyebrow">TRANSMISSÃO ABERTA · 2086</div><h1>O futuro é<br>um <em>enigma.</em></h1><p>Em uma cidade feita de códigos, cada palavra abre um novo caminho. Sintonize sua mente.</p><div class="hero-pills"><span>${icon('grid',12)} 300 FASES</span><span>${icon('layers',12)} ${themes.length} UNIVERSOS</span><span>${icon('bolt',12)} 3 MODOS</span></div></div><div class="hero-visual"><span class="visual-label">⌖ DISTRITO LÉXICO</span>${cityArt()}</div></section><section><div class="section-heading"><h2>Escolha sua frequência</h2><span class="meta">03 MODOS DE JOGO</span></div><div class="modes">${MODES.map((m,i)=>`<article class="mode-card ${m==='cascade'?'violet':m==='magazine'?'magazine-card':''}"><div class="mode-tag"><span class="tag-square"></span> ${m==='cascade'?'CONEXÕES EM CADEIA':m==='magazine'?'PISTAS DENTRO DA GRADE':'PALAVRAS QUE SE ENCONTRAM'}</div><div class="card-main"><div><h3>${modeName(m)}</h3><p>${m==='cascade'?'Uma resposta acende a próxima. Descubra palavras e libere letras nas linhas abaixo.':m==='magazine'?'Pistas nas casas e setas, como nas revistas. Preencha livremente e confira apenas a grade completa.':'Cruze ideias, conecte palavras. Resolva as pistas e complete cada espaço da grade.'}</p></div>${m==='magazine'?magazineArt():modeArt(m==='cascade')}</div><div class="mode-footer"><span class="phase-count"><strong>${pad(completedCount(m))}</strong> / 100 FASES</span><button class="btn ${m==='cascade'?'violet':''}" data-action="start" data-mode="${m}">${completedCount(m)||save.sessions[`${m}:1`] ? 'Continuar' : 'Iniciar jornada'} ${icon('arrow',16)}</button></div></article>`).join('')}</div></section><section class="home-bottom"><div class="transmission"><div class="trans-icon">${icon('shuffle',23)}</div><div><div class="eyebrow">NENHUMA CONEXÃO É POR ACASO</div><h3>Cinco temas. Infinitas conexões.</h3><p>Heróis, ciência, código e muito mais. A cada fase, cinco universos se encontram no seu tabuleiro.</p></div></div><div class="mini-stats"><div class="mini-stat"><b>${pad(totalCompleted())}<span style="font-size:13px;color:#8f7b9c"> / 300</span></b><span>FASES CONCLUÍDAS</span></div><div class="mini-stat"><b>${icon('star',18)}${totalStars()}</b><span>ESTRELAS CONQUISTADAS</span></div></div></section>`;
 }
 
 function pageHead(eyebrow: string, title: string, description: string) {
@@ -185,17 +190,17 @@ function pageHead(eyebrow: string, title: string, description: string) {
 }
 
 function modeSwitch() {
-  return `<div class="segmented" aria-label="Selecionar modo">${(['classic','cascade'] as Mode[]).map(m=>`<button data-action="mode" data-mode="${m}" class="${m===mode?'active':''}" aria-pressed="${m===mode}">${modeName(m)}</button>`).join('')}</div>`;
+  return `<div class="segmented" aria-label="Selecionar modo">${MODES.map(m=>`<button data-action="mode" data-mode="${m}" class="${m===mode?'active':''}" aria-pressed="${m===mode}">${modeName(m)}</button>`).join('')}</div>`;
 }
 
 function renderMap() {
   const unlocked = unlockedLevel(save,mode);
   const sectors = ['Primeiro sinal','Ruas de neon','Circuito aberto','Memória de silício','Frequência oculta','Cidade sintética','Além do firewall','Horizonte de dados','Última transmissão','O núcleo'];
-  return `${pageHead('CAMPANHA / 200 FASES','Toda conexão começa aqui.','Dez distritos, cem desafios em cada modo. Conclua uma fase para abrir a próxima. Você pode voltar às fases que já venceu.')}<div class="toolbar">${modeSwitch()}<span class="small-pill">${completedCount(mode)} / 100 CONCLUÍDAS</span></div>${sectors.map((sector,index)=>`<h2 class="sector-label">DISTRITO ${pad(index+1)} <span style="color:var(--amber)">/ ${sector.toUpperCase()}</span></h2><div class="level-grid">${Array.from({length:10},(_,i)=>{const n=index*10+i+1;const result=save.results[mode][n];const locked=n>unlocked;return `<button class="level-button ${result?'done':n===unlocked?'current':''}" data-action="level" data-level="${n}" ${locked?'disabled':''} aria-label="Fase ${n}${locked?', bloqueada':result?`, concluída, ${result.stars} estrelas`: ', disponível'}">${locked?icon('lock',15):`<b>${pad(n)}</b>`}<small>${result?'★'.repeat(result.stars)+'☆'.repeat(3-result.stars):locked?pad(n):'JOGAR'}</small></button>`}).join('')}</div>`).join('')}`;
+  return `${pageHead('CAMPANHA / 300 FASES','Toda conexão começa aqui.','Dez distritos, cem desafios em cada modo. Conclua uma fase para abrir a próxima. Você pode voltar às fases que já venceu.')}<div class="toolbar">${modeSwitch()}<span class="small-pill">${completedCount(mode)} / 100 CONCLUÍDAS</span></div>${sectors.map((sector,index)=>`<h2 class="sector-label">DISTRITO ${pad(index+1)} <span style="color:var(--amber)">/ ${sector.toUpperCase()}</span></h2><div class="level-grid">${Array.from({length:10},(_,i)=>{const n=index*10+i+1;const result=save.results[mode][n];const locked=n>unlocked;return `<button class="level-button ${result?'done':n===unlocked?'current':''}" data-action="level" data-level="${n}" ${locked?'disabled':''} aria-label="Fase ${n}${locked?', bloqueada':result?`, concluída, ${result.stars} estrelas`: ', disponível'}">${locked?icon('lock',15):`<b>${pad(n)}</b>`}<small>${result?'★'.repeat(result.stars)+'☆'.repeat(3-result.stars):locked?pad(n):'JOGAR'}</small></button>`}).join('')}</div>`).join('')}`;
 }
 
 function renderSetup() {
-  return `${pageHead(`${modeName(mode).toUpperCase()} / FASE ${pad(level)}`,'Sintonize seus universos.','Cinco temas sorteados. Todas as palavras desta fase vêm desses universos. Gostou da combinação? Então entre no circuito.')}<div class="theme-draw">${selectedThemes.map((theme,index)=>themeCard(theme,index)).join('')}</div><div class="setup-bottom"><p><b>${level<=30?'SINAL INICIAL':level<=65?'SINAL AVANÇADO':'SINAL MESTRE'}</b><br>${mode==='classic'?'As letras compartilhadas conectam as palavras.':'Acerte uma linha para revelar letras iguais nas linhas abaixo.'}<br>Sem limite de tempo. Jogue no seu ritmo.</p><div class="setup-actions"><button class="btn outline" data-action="shuffle">${icon('shuffle',15)} Sortear novamente</button><button class="btn" data-action="begin">Entrar no circuito ${icon('arrow',16)}</button></div></div><div class="tip-note">${icon('bulb',14)} &nbsp;Acentos, espaços e hífens não entram nas casas. “Inteligência” vira INTELIGENCIA. As pistas mostram o número de letras.</div><button class="btn text" data-view="map">${icon('back',15)} Voltar ao mapa</button>`;
+  return `${pageHead(`${modeName(mode).toUpperCase()} / FASE ${pad(level)}`,'Sintonize seus universos.','Cinco temas sorteados. Todas as palavras desta fase vêm desses universos. Gostou da combinação? Então entre no circuito.')}<div class="theme-draw">${selectedThemes.map((theme,index)=>themeCard(theme,index)).join('')}</div><div class="setup-bottom"><p><b>${level<=30?'SINAL INICIAL':level<=65?'SINAL AVANÇADO':'SINAL MESTRE'}</b><br>${mode==='magazine'?'Pistas dentro das casas. Só confira ao preencher toda a grade; nenhum erro será apontado.':mode==='classic'?'As letras compartilhadas conectam as palavras.':'Acerte uma linha para revelar letras iguais nas linhas abaixo.'}<br>Sem limite de tempo. Jogue no seu ritmo.</p><div class="setup-actions"><button class="btn outline" data-action="shuffle">${icon('shuffle',15)} Sortear novamente</button><button class="btn" data-action="begin">Entrar no circuito ${icon('arrow',16)}</button></div></div><div class="tip-note">${icon('bulb',14)} &nbsp;Acentos, espaços e hífens não entram nas casas. “Inteligência” vira INTELIGENCIA. As pistas mostram o número de letras.</div><button class="btn text" data-view="map">${icon('back',15)} Voltar ao mapa</button>`;
 }
 
 function themeCard(theme: Theme, index: number, library = false) {
@@ -211,7 +216,7 @@ function renderStats() {
   const results = Object.values(save.results).flatMap(Object.values);
   const score = results.reduce((sum,result)=>sum+result.score,0);
   const perfect = results.filter(result=>result.stars===3).length;
-  return `${pageHead('SEU ARQUIVO DE CONEXÕES','Cada palavra deixa uma marca.','Seu progresso é salvo neste navegador. Exporte um backup em Ajustes para levar a campanha a outro dispositivo.')}<div class="stat-grid">${[[String(totalCompleted()),'Fases concluídas','grid'],[String(totalStars()),'Estrelas conquistadas','star'],[score.toLocaleString('pt-BR'),'Pontos de conexão','bolt'],[String(perfect),'Fases com 3 estrelas','trophy']].map(([number,label,glyph])=>`<div class="stat-card">${icon(glyph,22)}<b>${number}</b><span>${label}</span></div>`).join('')}</div>${(['classic','cascade'] as Mode[]).map(m=>`<div class="progress-row"><h3>${modeName(m)}</h3><div class="progress-track"><span style="width:${completedCount(m)}%"></span></div><p>${completedCount(m)} de 100 fases concluídas · ${Object.values(save.results[m]).reduce((sum,result)=>sum+result.stars,0)} de 300 estrelas</p></div>`).join('')}<div class="tip-note">Três estrelas: complete sem dicas e sem erros. Duas: até 4 dicas e erros somados. Uma: conclua no seu ritmo. Sempre dá para tentar novamente.</div><button class="btn" data-view="map">Voltar à jornada ${icon('arrow',16)}</button>`;
+  return `${pageHead('SEU ARQUIVO DE CONEXÕES','Cada palavra deixa uma marca.','Seu progresso é salvo neste navegador. Exporte um backup em Ajustes para levar a campanha a outro dispositivo.')}<div class="stat-grid">${[[String(totalCompleted()),'Fases concluídas','grid'],[String(totalStars()),'Estrelas conquistadas','star'],[score.toLocaleString('pt-BR'),'Pontos de conexão','bolt'],[String(perfect),'Fases com 3 estrelas','trophy']].map(([number,label,glyph])=>`<div class="stat-card">${icon(glyph,22)}<b>${number}</b><span>${label}</span></div>`).join('')}</div>${MODES.map(m=>`<div class="progress-row"><h3>${modeName(m)}</h3><div class="progress-track"><span style="width:${completedCount(m)}%"></span></div><p>${completedCount(m)} de 100 fases concluídas · ${Object.values(save.results[m]).reduce((sum,result)=>sum+result.stars,0)} de 300 estrelas</p></div>`).join('')}<div class="tip-note">Três estrelas: complete sem dicas e sem erros. Duas: até 4 dicas e erros somados. Uma: conclua no seu ritmo. Sempre dá para tentar novamente.</div><button class="btn" data-view="map">Voltar à jornada ${icon('arrow',16)}</button>`;
 }
 
 function renderSettings() {
@@ -219,7 +224,7 @@ function renderSettings() {
 }
 
 function renderHelp() {
-  return `${pageHead('MANUAL DE CAMPO','Primeiro, encontre a conexão.','Não há cronômetro regressivo nem vidas para perder. Teste suas ideias, use as pistas e aproveite a descoberta.')}<div class="help-grid"><article class="help-card">${icon('grid',26)}<h2>Cruzadas clássicas</h2><p>Selecione uma pista ou uma casa. Digite a resposta completa no campo e confirme. Você também pode preencher com o teclado do jogo.</p><p>Palavras horizontais e verticais compartilham casas. Ao acertar uma, as letras dos cruzamentos ficam disponíveis para as outras. Toque de novo em um cruzamento para trocar a direção.</p></article><article class="help-card">${icon('layers',26)}<h2>Efeito cascata</h2><p>Cada linha é uma palavra. Ao descobrir uma resposta, suas letras iguais aparecem automaticamente em todas as linhas abaixo.</p><p>Comece por cima para criar uma corrente de descobertas. Todas as pistas ficam disponíveis; você pode resolver em outra ordem se preferir.</p></article><article class="help-card">${icon('bulb',26)}<h2>Uma luz quando precisar</h2><p>A lâmpada revela uma letra da palavra selecionada. São três dicas por fase. Cada dica revela uma letra nos cruzamentos; na cascata, a letra também aparece nas linhas abaixo. As dicas reduzem a pontuação e podem diminuir as estrelas da fase.</p><p>Sem acentos, espaços ou pontuação nas casas. As pistas indicam a quantidade de letras e o tema de cada resposta.</p></article><article class="help-card">${icon('trophy',26)}<h2>200 conexões para descobrir</h2><p>Cada modo tem 100 fases. A dificuldade cresce com palavras mais desafiadoras e tabuleiros maiores. Cinco temas são sorteados antes de cada nova fase.</p><p>Enter confirma; Backspace apaga; as setas percorrem as letras da palavra selecionada. No celular, use o campo de resposta ou o teclado na tela.</p></article></div><button class="btn" data-view="home">Tudo pronto. Vamos jogar. ${icon('arrow',16)}</button>`;
+  return `${pageHead('MANUAL DE CAMPO','Primeiro, encontre a conexão.','Não há cronômetro regressivo nem vidas para perder. Teste suas ideias, use as pistas e aproveite a descoberta.')}<div class="help-grid"><article class="help-card">${icon('grid',26)}<h2>Clássico de revista</h2><p>As pistas aparecem dentro das casas com setas. Toque na pista ou na letra para selecionar uma palavra. Você pode escrever e corrigir livremente.</p><p>Enter passa para a próxima palavra. Conferir grade completa só libera com todas as casas preenchidas. Se a grade não estiver correta, o jogo pede uma revisão sem marcar erros. Só a grade inteira correta conclui a fase.</p></article><article class="help-card">${icon('grid',26)}<h2>Palavras cruzadas</h2><p>Selecione uma pista ou uma casa. Toque em uma casa e digite diretamente na grade. Confirme a palavra quando terminar. Você também pode preencher com o teclado do jogo.</p><p>Palavras horizontais e verticais compartilham casas. Ao acertar uma, as letras dos cruzamentos ficam disponíveis para as outras. Toque de novo em um cruzamento para trocar a direção.</p></article><article class="help-card">${icon('layers',26)}<h2>Efeito cascata</h2><p>Cada linha é uma palavra. Ao descobrir uma resposta, suas letras iguais aparecem automaticamente em todas as linhas abaixo.</p><p>Comece por cima para criar uma corrente de descobertas. Todas as pistas ficam disponíveis; você pode resolver em outra ordem se preferir.</p></article><article class="help-card">${icon('bulb',26)}<h2>Uma luz quando precisar</h2><p>A lâmpada revela uma letra da palavra selecionada. São três dicas por fase. Cada dica revela uma letra nos cruzamentos; na cascata, a letra também aparece nas linhas abaixo. As dicas reduzem a pontuação e podem diminuir as estrelas da fase.</p><p>Sem acentos, espaços ou pontuação nas casas. As pistas indicam a quantidade de letras e o tema de cada resposta.</p></article><article class="help-card">${icon('trophy',26)}<h2>300 conexões para descobrir</h2><p>Cada modo tem 100 fases. A dificuldade cresce com palavras mais desafiadoras e tabuleiros maiores. Cinco temas são sorteados antes de cada nova fase.</p><p>Enter confirma; Backspace apaga; as setas percorrem as letras da palavra selecionada. No celular, toque na casa e use o teclado para preencher a grade.</p></article></div><button class="btn" data-view="home">Tudo pronto. Vamos jogar. ${icon('arrow',16)}</button>`;
 }
 
 function selectWord(id: string, cell?: string) {
@@ -235,7 +240,7 @@ function selectWord(id: string, cell?: string) {
 
 function focusAnswer() {
   const input = document.querySelector<HTMLInputElement>('#answer-input');
-  if (input && !input.disabled) input.focus({ preventScroll: true });
+  if (input && !input.disabled) { input.focus({ preventScroll: true }); input.setSelectionRange(cursor, cursor + 1); }
   updateKeyboardViewport();
   if (editingWord && matchMedia('(max-width:700px)').matches) document.querySelector('.board-panel')?.scrollIntoView({ block: 'start', behavior: 'instant' });
 }
@@ -275,10 +280,15 @@ function renderGame() {
   if (!puzzle.words.some(word=>word.id===activeWordId)) activeWordId = (puzzle.words.find(word=>!session.solved.includes(word.id)) || puzzle.words[0]).id;
   const word = activeWord()!;
   const complete = session.completed;
-  return `<div class="game-header"><div><div class="eyebrow">${modeName(mode).toUpperCase()} / ${esc(puzzle.difficulty)}</div><h1>Fase ${pad(level)} <span style="color:var(--muted);font-weight:400">· ${complete?'Sinal decifrado':'Encontre a conexão'}</span></h1></div><div class="game-badges"><span class="small-pill">${icon('clock',12)} <span id="timer">${timeLabel(session.elapsed)}</span></span><span class="small-pill">${icon('bolt',12)} <span id="score">${getScore(session)}</span> PTS</span></div></div><div class="game-themes">${puzzle.themeIds.map(id=>`<span class="theme-chip">${esc(themes.find(t=>t.id===id)?.name || id)}</span>`).join('')}</div>${complete?renderSuccess(session):''}<div class="game-layout"><section class="board-panel" aria-label="Tabuleiro de ${modeName(mode)}"><div class="board-caption"><span>${mode==='classic'?'CRUZADAS DE REVISTA':'CONEXÕES EM CASCATA'}</span><b>${session.solved.length} / ${puzzle.words.length} DECIFRADAS</b></div><div id="board" class="board-scroll">${renderBoard(session)}</div><div class="board-legend"><span><i class="legend-box"></i> A descobrir</span><span><i class="legend-box amber"></i> Letra conectada</span></div><div class="game-progress"><div class="progress-track"><span style="width:${session.solved.length/puzzle.words.length*100}%"></span></div><span>${Math.round(session.solved.length/puzzle.words.length*100)}% DO SINAL</span></div></section><section class="game-side" aria-label="Pistas e respostas"><div class="word-editor ${editingWord?'editing':''}">${!complete?`<form class="answer-panel" id="answer-form"><div class="answer-kicker"><span>${word.number}${mode==='classic'?(word.direction==='across'?' → HORIZONTAL':' ↓ VERTICAL'):' / LINHA'}</span><span>${word.answer.length} LETRAS</span><button type="button" class="editor-close" data-action="close-keyboard" aria-label="Fechar teclado">⌄</button></div><h2 id="active-clue">${esc(word.clue)}</h2><label for="answer-input" class="sr-only">Resposta para a pista ${word.number}</label><input id="answer-input" class="answer-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" maxlength="40" value="${esc(answerPrefix(session,word))}" placeholder="${session.solved.includes(word.id)?'Palavra decifrada':`Sua resposta · ${word.answer.length} letras`}" ${session.solved.includes(word.id)?'disabled':''} aria-describedby="active-clue"><div class="answer-controls"><button type="submit" class="btn" ${session.solved.includes(word.id)?'disabled':''}>Conectar ${icon('arrow',15)}</button><button type="button" class="btn outline" data-action="hint" aria-label="Revelar uma letra" title="Dicas disponíveis nesta fase" ${session.solved.includes(word.id)||session.hints>=MAX_HINTS?'disabled':''}>${icon('bulb',18)} <small>${Math.max(0,MAX_HINTS-session.hints)}/${MAX_HINTS}</small></button></div><p class="answer-hint">${esc(word.themeName)} · ${session.hints} ${session.hints===1?'dica usada de 3':'dicas usadas de 3'} · ${session.mistakes} ${session.mistakes===1?'tentativa incorreta':'tentativas incorretas'}</p></form>`:''}${!complete?renderKeyboard():''}</div><div class="word-list"><div class="list-heading">${mode==='classic'?'PISTAS DA FREQUÊNCIA':'PISTAS / DE CIMA PARA BAIXO'}</div>${puzzle.words.map(w=>`<button class="word-clue ${w.id===activeWordId?'active':''} ${session.solved.includes(w.id)?'is-solved':''}" data-word="${esc(w.id)}"><span class="clue-num">${session.solved.includes(w.id)?icon('check',14):w.number}</span><span class="clue-copy">${esc(w.clue)}<small>${esc(w.themeName)} · ${w.answer.length} letras${mode==='classic'?` · ${w.direction==='across'?'horizontal →':'vertical ↓'}`:''}${session.solved.includes(w.id)?` · ${esc(w.answer)}`:''}</small></span></button>`).join('')}</div></section></div><div class="toolbar"><button class="btn text" data-view="map">${icon('back',15)} Salvar e voltar ao mapa</button></div>`;
+  if (mode === 'magazine') {
+    if (complete) return renderSuccess(session) + `<section class="board-panel"><div id="board" class="board-scroll">${renderBoard(session)}</div></section>`;
+    return renderMagazineGame(session, word, editingWord, renderBoard(session), renderKeyboard(), gridInputValue(session, word), timeLabel(session.elapsed));
+  }
+  return `<div class="game-header"><div><div class="eyebrow">${modeName(mode).toUpperCase()} / ${esc(puzzle.difficulty)}</div><h1>Fase ${pad(level)} <span style="color:var(--muted);font-weight:400">· ${complete?'Sinal decifrado':'Encontre a conexão'}</span></h1></div><div class="game-badges"><span class="small-pill">${icon('clock',12)} <span id="timer">${timeLabel(session.elapsed)}</span></span><span class="small-pill">${icon('bolt',12)} <span id="score">${getScore(session)}</span> PTS</span></div></div><div class="game-themes">${puzzle.themeIds.map(id=>`<span class="theme-chip">${esc(themes.find(t=>t.id===id)?.name || id)}</span>`).join('')}</div>${complete?renderSuccess(session):''}<div class="game-layout"><section class="board-panel" aria-label="Tabuleiro de ${modeName(mode)}"><div class="board-caption"><span>${mode==='classic'?'CRUZADAS DE REVISTA':'CONEXÕES EM CASCATA'}</span><b>${session.solved.length} / ${puzzle.words.length} DECIFRADAS</b></div><div id="board" class="board-scroll">${renderBoard(session)}</div><div class="board-legend"><span><i class="legend-box"></i> A descobrir</span><span><i class="legend-box amber"></i> Letra conectada</span></div><div class="game-progress"><div class="progress-track"><span style="width:${session.solved.length/puzzle.words.length*100}%"></span></div><span>${Math.round(session.solved.length/puzzle.words.length*100)}% DO SINAL</span></div></section><section class="game-side" aria-label="Pistas e respostas"><div class="word-editor ${editingWord?'editing':''}">${!complete?`<form class="answer-panel" id="answer-form"><div class="answer-kicker"><span>${word.number}${mode==='classic'?(word.direction==='across'?' → HORIZONTAL':' ↓ VERTICAL'):' / LINHA'}</span><span>${word.answer.length} LETRAS</span><button type="button" class="editor-close" data-action="close-keyboard" aria-label="Fechar teclado">⌄</button></div><h2 id="active-clue">${esc(word.clue)}</h2><label for="answer-input" class="sr-only">Resposta para a pista ${word.number}</label><input id="answer-input" class="answer-input grid-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" maxlength="40" value="${esc(gridInputValue(session,word))}" placeholder="${session.solved.includes(word.id)?'Palavra decifrada':`Sua resposta · ${word.answer.length} letras`}" ${session.solved.includes(word.id)?'disabled':''} aria-describedby="active-clue"><div class="answer-controls"><button type="submit" class="btn" ${session.solved.includes(word.id)?'disabled':''}>Conectar ${icon('arrow',15)}</button><button type="button" class="btn outline" data-action="hint" aria-label="Revelar uma letra" title="Dicas disponíveis nesta fase" ${session.solved.includes(word.id)||session.hints>=MAX_HINTS?'disabled':''}>${icon('bulb',18)} <small>${Math.max(0,MAX_HINTS-session.hints)}/${MAX_HINTS}</small></button></div><p class="answer-hint">${esc(word.themeName)} · ${session.hints} ${session.hints===1?'dica usada de 3':'dicas usadas de 3'} · ${session.mistakes} ${session.mistakes===1?'tentativa incorreta':'tentativas incorretas'}</p></form>`:''}${!complete?renderKeyboard():''}</div><div class="word-list"><div class="list-heading">${mode==='classic'?'PISTAS DA FREQUÊNCIA':'PISTAS / DE CIMA PARA BAIXO'}</div>${puzzle.words.map(w=>`<button class="word-clue ${w.id===activeWordId?'active':''} ${session.solved.includes(w.id)?'is-solved':''}" data-word="${esc(w.id)}"><span class="clue-num">${session.solved.includes(w.id)?icon('check',14):w.number}</span><span class="clue-copy">${esc(w.clue)}<small>${esc(w.themeName)} · ${w.answer.length} letras${mode==='classic'?` · ${w.direction==='across'?'horizontal →':'vertical ↓'}`:''}${session.solved.includes(w.id)?` · ${esc(w.answer)}`:''}</small></span></button>`).join('')}</div></section></div><div class="toolbar"><button class="btn text" data-view="map">${icon('back',15)} Salvar e voltar ao mapa</button></div>`;
 }
 
 function renderBoard(session: Session) {
+  if (session.puzzle.mode === 'magazine') return renderMagazineBoard(session, session.puzzle.words.find(word => word.id === activeWordId) || session.puzzle.words[0], cursor, magazineSize);
   const word = session.puzzle.words.find(w=>w.id===activeWordId);
   const activeKeys = word ? wordCells(word).map(c=>c.key) : [];
   const solvedKeys = new Set(session.puzzle.words.filter(w=>session.solved.includes(w.id)).flatMap(wordCells).map(c=>c.key));
@@ -299,6 +309,7 @@ function renderSuccess(session: Session) {
 }
 
 function prepare(m: Mode, n: number, replay = false) {
+  gridMessage = '';
   mode=m; level=n;
   if(n>unlockedLevel(save,m)) { toast('Conclua a fase anterior para abrir esta conexão.'); return; }
   const existing = current();
@@ -326,7 +337,21 @@ async function begin() {
 function updateBoard() {
   const session=current();
   const board=document.querySelector('#board');
-  if(session&&board) board.innerHTML=renderBoard(session);
+  if(session&&board) {
+    const left=board.scrollLeft,top=board.scrollTop;
+    board.innerHTML=renderBoard(session);board.scrollLeft=left;board.scrollTop=top;
+  }
+  if (session?.puzzle.mode === 'magazine') {
+    const fill = gridFill(session);
+    const button = document.querySelector<HTMLButtonElement>('[data-action="check-grid"]');
+    if (button) button.disabled = !fill.full;
+    const count = document.querySelector('#magazine-count');
+    if (count) count.textContent = `${fill.filled} / ${fill.total} CASAS PREENCHIDAS`;
+    const progress = document.querySelector<HTMLElement>('#magazine-progress');
+    if (progress) progress.style.width = `${Math.round(fill.filled / fill.total * 100)}%`;
+    const feedback = document.querySelector('#grid-feedback');
+    if (feedback) feedback.textContent = gridMessage || (fill.full ? 'Grade preenchida. Você já pode conferir.' : 'A conferência libera quando todas as casas estiverem preenchidas.');
+  }
 }
 
 function answerPrefix(session: Session, word: PuzzleWord): string {
@@ -338,9 +363,29 @@ function answerPrefix(session: Session, word: PuzzleWord): string {
   return prefix;
 }
 
+function gridInputValue(session: Session, word: PuzzleWord): string {
+  return wordCells(word).map(cell => session.values[cell.key] || ' ').join('');
+}
+
 function syncAnswerField() {
   const session=current();const word=activeWord();const input=document.querySelector<HTMLInputElement>('#answer-input');
-  if(session&&word&&input) input.value=answerPrefix(session,word);
+  if(session&&word&&input) { input.value=gridInputValue(session,word); input.setSelectionRange(cursor,cursor+1); }
+}
+
+function receiveGridInput(input: HTMLInputElement) {
+  const session=current(),word=activeWord();
+  if(!session||!word||session.completed||session.solved.includes(word.id))return;
+  const value=input.value;
+  if(value.length===word.answer.length) {
+    wordCells(word).forEach((cell,index)=>{
+      if(session.revealed[cell.key])return;
+      const letter=normalizeAnswer(value[index]);
+      if(letter)session.values[cell.key]=letter;else delete session.values[cell.key];
+    });
+    cursor=Math.min(input.selectionStart??cursor+1,word.answer.length-1);
+    gridMessage='';revealAnimation=[];persist();updateBoard();
+  } else applyInput(value);
+  syncAnswerField();updateKeyboardViewport();
 }
 
 function applyInput(value: string) {
@@ -352,7 +397,7 @@ function applyInput(value: string) {
     if(session.revealed[cell.key]) return;
     if(letters[index]) session.values[cell.key]=letters[index]; else delete session.values[cell.key];
   });
-  cursor=Math.min(letters.length,word.answer.length-1);revealAnimation=[];persist();updateBoard();
+  cursor=Math.min(letters.length,word.answer.length-1);revealAnimation=[];gridMessage='';persist();updateBoard();
 }
 
 function typeKey(key: string) {
@@ -367,13 +412,15 @@ function typeKey(key: string) {
     if(!session.values[cells[index].key]||session.revealed[cells[index].key])index--;
     while(index>=0&&session.revealed[cells[index].key])index--;
     if(index>=0){delete session.values[cells[index].key];cursor=index;}
+  }else if(key==='Delete'){
+    if(!session.revealed[cells[cursor].key])delete session.values[cells[cursor].key];
   }else if(/^[a-zA-ZÀ-ž]$/.test(key)){
     const letter=normalizeAnswer(key);if(!letter)return;
     let index=cursor;while(index<cells.length&&session.revealed[cells[index].key])index++;
     if(index>=cells.length)index=cells.findIndex(cell=>!session.revealed[cell.key]&&!session.values[cell.key]);
     if(index>=0&&index<cells.length){session.values[cells[index].key]=letter;cursor=Math.min(index+1,cells.length-1);while(cursor<cells.length-1&&session.revealed[cells[cursor].key])cursor++;tone();}
   }else return;
-  revealAnimation=[];persist();updateBoard();syncAnswerField();
+  revealAnimation=[];gridMessage='';persist();updateBoard();syncAnswerField();updateKeyboardViewport();
 }
 
 function afterChange(previous: Session, next: Session) {
@@ -392,6 +439,13 @@ function afterChange(previous: Session, next: Session) {
 
 function confirmAnswer() {
   const session=current();const word=activeWord();if(!session||!word||session.completed||session.solved.includes(word.id))return;
+  if (mode === 'magazine') {
+    const index = session.puzzle.words.findIndex(candidate => candidate.id === word.id);
+    const ordered = [...session.puzzle.words.slice(index + 1), ...session.puzzle.words.slice(0, index + 1)];
+    const next = ordered.find(candidate => wordCells(candidate).some(cell => !session.values[cell.key])) || ordered[0];
+    if (next) selectWord(next.id);
+    return;
+  }
   const cells=wordCells(word);
   if(cells.some(cell=>!session.values[cell.key])){toast(`Faltam letras. Esta resposta tem ${word.answer.length} casas.`);return;}
   const answer=cells.map(cell=>session.values[cell.key]).join('');
@@ -417,6 +471,15 @@ app.addEventListener('click',async event=>{
   const element=(event.target as HTMLElement).closest<HTMLElement>('button');if(!element||element.hasAttribute('disabled'))return;
   const targetView=element.dataset.view as View|undefined;if(targetView){navigate(targetView);return;}
   const action=element.dataset.action;
+  if(action==='magazine-smaller'||action==='magazine-larger'){magazineSize=Math.min(128,Math.max(64,magazineSize+(action==='magazine-larger'?20:-20)));updateBoard();return;}
+  if(action==='check-grid'){
+    const session=current();if(!session||mode!=='magazine')return;
+    const result=checkGrid(session);
+    if(result.status==='complete'){afterChange(session,result.session);return;}
+    save.sessions[sessionKey()]=result.session;persist();
+    gridMessage=result.status==='retry'?'A grade ainda não está correta. Revise suas respostas e confira novamente.':'Preencha todas as casas antes de conferir.';
+    updateBoard();return;
+  }
   if(action==='close-keyboard'){editingWord=false;document.querySelector<HTMLInputElement>('#answer-input')?.blur();render();return;}
   if(action==='choose-profile'){await chooseProfile(element.dataset.profile as ProfileId);return;}
   if(action==='switch-profile'){switchProfile();return;}
@@ -475,7 +538,7 @@ app.addEventListener('submit',async event=>{
 });
 app.addEventListener('input',event=>{
   const input=event.target as HTMLInputElement;
-  if(input.id==='answer-input')applyInput(input.value);
+  if(input.id==='answer-input'&&!(event as InputEvent).isComposing)receiveGridInput(input);
   if(input.id==='theme-search'){
     searchTerm=input.value;
     const filtered=themes.filter(theme=>normalizeAnswer(`${theme.id} ${theme.name} ${theme.description}`).includes(normalizeAnswer(searchTerm)));
@@ -483,6 +546,23 @@ app.addEventListener('input',event=>{
     document.querySelector('#theme-count')!.textContent=`${filtered.length} UNIVERSOS`;
   }
 });
+app.addEventListener('beforeinput',event=>{
+  const input=event.target as HTMLInputElement;if(input.id!=='answer-input')return;
+  const edit=event as InputEvent;
+  if(edit.inputType==='deleteContentBackward'||edit.inputType==='deleteContentForward'){
+    edit.preventDefault();typeKey(edit.inputType==='deleteContentBackward'?'Backspace':'Delete');return;
+  }
+  if(edit.data&&normalizeAnswer(edit.data).length>1){edit.preventDefault();insertGridText(edit.data);}
+});
+function insertGridText(text: string) {
+  const word=activeWord();if(!word)return;
+  for(const letter of normalizeAnswer(text).slice(0,word.answer.length-cursor))typeKey(letter);
+}
+app.addEventListener('paste',event=>{
+  if((event.target as HTMLElement).id!=='answer-input')return;
+  event.preventDefault();insertGridText(event.clipboardData?.getData('text/plain')||'');
+});
+app.addEventListener('compositionend',event=>{const input=event.target as HTMLInputElement;if(input.id==='answer-input')receiveGridInput(input);});
 app.addEventListener('focusin', event => {
   if ((event.target as HTMLElement).id === 'answer-input') {
     editingWord = true;
@@ -507,9 +587,13 @@ app.addEventListener('change',async event=>{
 document.addEventListener('keydown',event=>{
   if(!activeProfile||view!=='play'||document.querySelector<HTMLDialogElement>('#sync-dialog')?.open||event.ctrlKey||event.metaKey||event.altKey)return;
   const target=event.target as HTMLElement;
+  if(target.id==='answer-input'){
+    if(['Enter','Backspace','Delete','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)){event.preventDefault();typeKey(event.key);}
+    return;
+  }
   if(['INPUT','TEXTAREA','SELECT'].includes(target.tagName)||target.isContentEditable)return;
   if(event.key==='Enter'&&target.tagName==='BUTTON'&&!target.hasAttribute('data-key')&&!target.hasAttribute('data-cell'))return;
-  if(/^[a-zA-ZÀ-ž]$/.test(event.key)||['Enter','Backspace','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)){event.preventDefault();typeKey(event.key);}
+  if(/^[a-zA-ZÀ-ž]$/.test(event.key)||['Enter','Backspace','Delete','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)){event.preventDefault();typeKey(event.key);}
 });
 setInterval(()=>{
   const session=current();if(!activeProfile||view!=='play'||!session||session.completed||document.hidden||document.querySelector<HTMLDialogElement>('#sync-dialog')?.open)return;

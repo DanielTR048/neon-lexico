@@ -1,0 +1,26 @@
+import { cellKey, clueCell, gridFill, wordCells, MAX_HINTS } from './engine';
+import { icon } from './art';
+import type { PuzzleWord, Session } from './types';
+
+const esc = (value: string) => value.replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]!));
+
+export function renderMagazineBoard(session: Session, selected: PuzzleWord, cursor: number, size: number) {
+  const letters = new Set(session.puzzle.words.flatMap(wordCells).map(cell => cell.key));
+  const active = wordCells(selected).map(cell => cell.key);
+  const clues = new Map<string, PuzzleWord[]>();
+  for (const word of session.puzzle.words) {
+    const key = clueCell(word).key;
+    clues.set(key, [...(clues.get(key) || []), word]);
+  }
+  return `<div class="magazine-grid" style="--cols:${session.puzzle.cols};--magazine-cell:${size}px" aria-label="Clássico com pistas dentro das casas, ${session.puzzle.rows} linhas e ${session.puzzle.cols} colunas">${Array.from({ length: session.puzzle.rows }, (_, row) => Array.from({ length: session.puzzle.cols }, (_, col) => {
+    const key = cellKey(row, col), entries = clues.get(key);
+    if (entries) return `<div class="magazine-clue-cell">${entries.map(word => `<button class="magazine-clue ${word.id === selected.id ? 'active' : ''}" data-word="${esc(word.id)}" aria-label="Pista ${word.number} ${word.direction === 'across' ? 'horizontal' : 'vertical'}: ${esc(word.clue)}" style="--clue-font:${word.clue.length > 95 || entries.length > 1 ? 9 : 11}px"><span>${esc(word.clue)}</span><b aria-hidden="true">${word.direction === 'across' ? '→' : '↓'}</b></button>`).join('')}</div>`;
+    if (!letters.has(key)) return '<span class="magazine-block" aria-hidden="true"></span>';
+    return `<button class="cell magazine-letter ${active.includes(key) ? 'selected' : ''} ${active[cursor] === key && !session.completed ? 'cursor' : ''} ${session.revealed[key] ? 'given' : ''}" data-cell="${key}" aria-label="casa ${row}, ${col}, ${session.values[key] || 'vazia'}">${session.values[key] || ''}</button>`;
+  }).join('')).join('')}</div>`;
+}
+
+export function renderMagazineGame(session: Session, word: PuzzleWord, editing: boolean, board: string, keyboard: string, answer: string, clock: string) {
+  const fill = gridFill(session), percentage = Math.round(fill.filled / fill.total * 100);
+  return `<div class="game-header"><div><div class="eyebrow">CLÁSSICO / ${esc(session.puzzle.difficulty)}</div><h1>Fase ${String(session.puzzle.level).padStart(2, '0')} · Cruzadas de revista</h1></div><span class="small-pill">${icon('clock', 12)} <span id="timer">${clock}</span></span></div><p class="magazine-note">As pistas ficam nas casas com setas. Preencha a grade no seu ritmo e confira tudo no final. Nenhuma palavra é corrigida durante a partida.</p><div class="game-layout magazine-layout"><section class="board-panel" aria-label="Tabuleiro do Clássico"><div class="magazine-tools"><span id="magazine-count">${fill.filled} / ${fill.total} CASAS PREENCHIDAS</span><div><button data-action="magazine-smaller" aria-label="Diminuir grade">−</button><button data-action="magazine-larger" aria-label="Ampliar grade">+</button></div></div><div id="board" class="board-scroll">${board}</div><div class="game-progress"><div class="progress-track"><span id="magazine-progress" style="width:${percentage}%"></span></div><span>PREENCHIMENTO</span></div></section><section class="game-side" aria-label="Pista selecionada e resposta"><div class="word-editor ${editing ? 'editing' : ''}"><form class="answer-panel" id="answer-form"><div class="answer-kicker"><span>${word.number} ${word.direction === 'across' ? '→ HORIZONTAL' : '↓ VERTICAL'}</span><span>${word.answer.length} LETRAS</span><button type="button" class="editor-close" data-action="close-keyboard" aria-label="Fechar teclado">⌄</button></div><h2 id="active-clue">${esc(word.clue)}</h2><label for="answer-input" class="sr-only">Resposta para a pista ${word.number}</label><input id="answer-input" class="answer-input grid-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" maxlength="${word.answer.length}" value="${esc(answer)}" placeholder="Sua resposta · ${word.answer.length} letras" aria-describedby="active-clue"><div class="answer-controls"><button type="submit" class="btn outline">Próxima palavra ${icon('arrow', 15)}</button><button type="button" class="btn outline" data-action="hint" aria-label="Revelar uma letra" ${session.hints >= MAX_HINTS ? 'disabled' : ''}>${icon('bulb', 18)} <small>${Math.max(0, MAX_HINTS - session.hints)}/${MAX_HINTS}</small></button></div><div class="magazine-check"><button type="button" class="btn" data-action="check-grid" ${fill.full ? '' : 'disabled'}>Conferir grade completa</button><p id="grid-feedback" role="status">${fill.full ? 'Grade preenchida. Você já pode conferir.' : 'A conferência libera quando todas as casas estiverem preenchidas.'}</p></div><p class="answer-hint">${esc(word.themeName)} · ${session.hints} de 3 dicas usadas</p></form>${keyboard}</div></section></div><div class="toolbar"><button class="btn text" data-view="map">${icon('back', 15)} Salvar e voltar ao mapa</button></div>`;
+}

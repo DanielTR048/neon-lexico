@@ -7,7 +7,7 @@
     "dev": "vite --host 0.0.0.0",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "test": "tsx --test tests/engine.test.ts tests/storage.test.ts",
+    "test": "tsx --test tests/engine.test.ts tests/storage.test.ts tests/magazine.test.ts",
     "test:e2e": "playwright test"
   },
   "devDependencies": {

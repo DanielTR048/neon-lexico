@@ -144,7 +144,7 @@ for (const mode of ['classic', 'cascade'] as Mode[]) {
     if (mode === 'classic') {
       await page.locator('[data-word="fruit"]').click();
       await expect(page.locator('[data-cell="0:0"]')).toHaveClass(/selected/);
-      await expect(page.locator('#answer-input')).toHaveValue('M');
+      await expect(page.locator('[data-cell="0:0"]')).toHaveText('1M');
       await page.locator('[data-word="table"]').click();
     } else {
       await expect(page.locator('[data-cell="1:0"]')).toHaveClass(/revealed/);

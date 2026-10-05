@@ -1,4 +1,5 @@
-export type Mode = 'classic' | 'cascade';
+export type Mode = 'classic' | 'magazine' | 'cascade';
+export const MODES: Mode[] = ['classic', 'magazine', 'cascade'];
 
 export interface Entry {
   id: string;

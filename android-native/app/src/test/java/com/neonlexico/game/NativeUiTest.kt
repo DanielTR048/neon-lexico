@@ -3,6 +3,7 @@ package com.neonlexico.game
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.os.Looper
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.lifecycle.ViewModelProvider
@@ -54,7 +55,7 @@ class NativeUiTest {
 
     @Test fun classicAndCascadeBoardsAcceptNativeInputAndResume() {
         compose.onNodeWithContentDescription("Entrar como Daniel").performClick()
-        for (mode in Mode.entries) {
+        for (mode in listOf(Mode.CLASSIC,Mode.CASCADE)) {
             compose.runOnIdle { model.prepare(mode, 1); assertEquals(Screen.SETUP, model.state.screen); assertEquals(5, model.state.selectedThemes.size) }
             if (mode == Mode.CLASSIC) screenshot("android-setup")
             compose.onNodeWithText("ENTRAR NO CIRCUITO →").performScrollTo().performClick()
@@ -64,7 +65,7 @@ class NativeUiTest {
             val first = model.state.session!!.puzzle.words.first()
             compose.runOnIdle { model.selectWord(first.id) }
             val partial = first.answer.take(2)
-            compose.onNodeWithContentDescription("Resposta para pista ${first.number}").assertIsDisplayed().performTextReplacement(partial)
+            compose.onNodeWithContentDescription("Resposta para pista ${first.number}").assertExists().performTextReplacement(partial)
             compose.runOnIdle {
                 model.onBackground()
                 val reloaded = GameViewModel(model.getApplication()).apply { selectProfile("daniel"); prepare(mode, 1) }
@@ -77,7 +78,7 @@ class NativeUiTest {
             compose.onNodeWithContentDescription("Entrar como Daniel").performClick()
             compose.runOnIdle { model.prepare(mode, 1); model.selectWord(first.id) }
             compose.onNodeWithContentDescription("Resposta para pista ${first.number}").assertTextContains(partial)
-            compose.onNodeWithContentDescription("Resposta para pista ${first.number}").assertIsDisplayed().performTextReplacement(first.answer)
+            compose.onNodeWithContentDescription("Resposta para pista ${first.number}").assertExists().performTextReplacement(first.answer)
             compose.onNodeWithContentDescription("Resposta para pista ${first.number}").assertTextContains(first.answer)
             compose.onNodeWithText("CONECTAR →").assertIsDisplayed().performClick()
             compose.runOnIdle { assertTrue("answer=${first.answer}; active=${model.state.activeWordId}; solved=${model.state.session!!.solved}; mistakes=${model.state.session!!.mistakes}", first.id in model.state.session!!.solved) }
@@ -122,10 +123,60 @@ class NativeUiTest {
         compose.onAllNodes(hasContentDescription("casa ${cell.row},${cell.col},", substring = true)).onFirst().performScrollTo().performClick()
         compose.waitForIdle()
         val selected = model.state.session!!.puzzle.words.first { it.id == model.state.activeWordId }
-        compose.onNodeWithContentDescription("Resposta para pista ${selected.number}").assertIsFocused().assertIsDisplayed()
+        compose.onNodeWithContentDescription("Resposta para pista ${selected.number}").assertIsFocused().assertExists()
         compose.onAllNodesWithText(selected.clue).onLast().assertIsDisplayed()
         compose.runOnIdle { assertEquals(0, model.state.session!!.hints) }
         screenshot("android-tap-to-type")
+    }
+
+    @Test fun everyModeTypesIntoTheTappedCellWithoutASeparateVisibleAnswerBox() {
+        compose.onNodeWithContentDescription("Entrar como Daniel").performClick()
+        for(mode in Mode.entries) {
+            compose.runOnIdle { model.prepare(mode,1) }
+            compose.onNodeWithText("ENTRAR NO CIRCUITO →").performScrollTo().performClick();awaitPlay()
+            val cell=model.state.session!!.puzzle.words.flatMap(Engine::wordCells).minWith(compareBy<Cell> { it.row }.thenBy { it.col })
+            compose.onAllNodes(hasContentDescription("casa ${cell.row},${cell.col},",substring=true)).onFirst().performScrollTo().performClick()
+            val selected=model.state.session!!.puzzle.words.first { it.id==model.state.activeWordId }
+            val input=compose.onNodeWithContentDescription("Resposta para pista ${selected.number}")
+            input.assertIsFocused().performTextInput("ZQ")
+            val cells=Engine.wordCells(selected);val index=cells.indexOfFirst { it.key==cell.key }
+            compose.runOnIdle {
+                assertEquals("Z",model.state.session!!.values[cell.key])
+                assertEquals("Q",model.state.session!!.values[cells[index+1].key])
+                assertEquals(index+2,model.state.cursor)
+            }
+            input.performKeyInput { pressKey(Key.Backspace) }
+            compose.runOnIdle {
+                assertEquals("Z",model.state.session!!.values[cell.key])
+                assertNull(model.state.session!!.values[cells[index+1].key])
+            }
+            compose.onNodeWithText("Sua resposta").assertDoesNotExist()
+            if(mode==Mode.MAGAZINE) {
+                compose.runOnIdle { assertTrue(model.state.session!!.solved.isEmpty());assertEquals(0,model.state.session!!.mistakes) }
+                compose.onNodeWithText("CONFERIR GRADE COMPLETA").assertIsNotEnabled()
+                screenshot("android-magazine-direct-grid")
+            }
+            compose.runOnIdle { model.onBackground();model.navigate(Screen.HOME) }
+        }
+    }
+
+    @Test fun magazineChecksOnlyTheWholeGridAndLeavesAllLettersEditableAfterFailure() {
+        val repository=GameRepository(compose.activity.application)
+        val puzzle=Engine(repository.catalog()).generatePuzzle("magazine-ui-check",Mode.MAGAZINE,1)
+        val values=mutableMapOf<String,String>();puzzle.words.forEach { word -> Engine.wordCells(word).forEachIndexed { index,cell -> values[cell.key]=word.answer[index].toString() } }
+        val first=puzzle.words.first();val key=Engine.wordCells(first).first().key
+        values[key]=if(values[key]=="Z") "X" else "Z"
+        val session=Session(puzzle,values=values)
+        compose.runOnIdle { repository.save("daniel",SaveData(seed="magazine-ui-check",sessions=mapOf("magazine:1" to session))) }
+        compose.onNodeWithContentDescription("Entrar como Daniel").performClick()
+        compose.runOnIdle { model.prepare(Mode.MAGAZINE,1) }
+        compose.onNodeWithText("CONFERIR GRADE COMPLETA").assertIsEnabled().performClick()
+        compose.onNodeWithText("A grade ainda não está correta. Revise suas respostas e confira novamente.").assertIsDisplayed()
+        compose.runOnIdle { assertEquals(session.values,model.state.session!!.values);assertTrue(model.state.session!!.solved.isEmpty());assertFalse(model.state.session!!.completed) }
+        compose.onNodeWithContentDescription("Resposta para pista ${first.number}").performTextReplacement(first.answer)
+        compose.onNodeWithText("CONFERIR GRADE COMPLETA").performClick()
+        compose.runOnIdle { assertTrue(model.state.session!!.completed);assertEquals(2,Engine.unlockedLevel(model.state.save,Mode.MAGAZINE));assertEquals(1,Engine.unlockedLevel(model.state.save,Mode.CLASSIC)) }
+        screenshot("android-magazine-victory")
     }
 
     @Test fun onlyThreeHintsCanBeUsedAndConnectedLettersAreVisible() {

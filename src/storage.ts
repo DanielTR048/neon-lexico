@@ -1,17 +1,17 @@
-import { cellKey, getScore, getStars, randomSeed } from './engine';
+import { cellKey, clueCell, getScore, getStars, randomSeed, wordCells } from './engine';
+import { MODES } from './types';
 import type { LevelResult, Mode, Puzzle, PuzzleWord, SaveData, Session } from './types';
 
 export const STORAGE_KEY = 'neon-lexico:v1';
 export type ProfileId = 'daniel' | 'larissa';
 export const profileKey = (id: ProfileId = 'daniel') => id === 'daniel' ? STORAGE_KEY : `${STORAGE_KEY}:larissa`;
 const MAX_BACKUP_BYTES = 8_000_000;
-const MODES: Mode[] = ['classic', 'cascade'];
 
 export function createSave(): SaveData {
   return {
     version: 1,
     seed: randomSeed(),
-    results: { classic: {}, cascade: {} },
+    results: { classic: {}, magazine: {}, cascade: {} },
     sessions: {},
     settings: { sound: true, reducedMotion: false },
   };
@@ -113,6 +113,10 @@ function puzzleFrom(value: unknown): Puzzle {
     difficulty: text(source.difficulty, 'dificuldade', 60),
   };
   solutionCells(puzzle);
+  if (mode === 'magazine') {
+    const letters = new Set(words.flatMap(wordCells).map(cell => cell.key));
+    if (words.some(word => { const clue = clueCell(word); return clue.row < 0 || clue.col < 0 || letters.has(clue.key); })) invalid('casa de pista inválida');
+  }
   return puzzle;
 }
 
@@ -150,6 +154,7 @@ function sessionFrom(value: unknown): Session {
   if (solved.some(id => !puzzle.words.some(word => word.id === id))) invalid('palavra resolvida desconhecida');
   const completed = bool(source.completed, 'estado de conclusão');
   if (completed !== (solved.length === puzzle.words.length)) invalid('estado de conclusão inconsistente');
+  if (puzzle.mode === 'magazine' && !completed && solved.length) invalid('conferência parcial no clássico');
   const values = lettersFrom(source.values, solution, false);
   const revealed = lettersFrom(source.revealed, solution, true);
   for (const [key, letter] of Object.entries(revealed)) {
@@ -183,9 +188,10 @@ export function importSave(json: string): SaveData {
   if (source.version !== 1) invalid('versão não compatível');
   const seed = text(source.seed, 'semente', 128);
   const resultsSource = object(source.results, 'resultados');
-  exactKeys(resultsSource, MODES, 'modos dos resultados');
-  const results: SaveData['results'] = { classic: {}, cascade: {} };
+  exactKeys(resultsSource, Object.hasOwn(resultsSource, 'magazine') ? MODES : ['classic', 'cascade'], 'modos dos resultados');
+  const results: SaveData['results'] = { classic: {}, magazine: {}, cascade: {} };
   for (const mode of MODES) {
+    if (mode === 'magazine' && !Object.hasOwn(resultsSource, mode)) continue;
     const modeResults = object(resultsSource[mode], 'resultados do modo');
     if (Object.keys(modeResults).length > 100) invalid('quantidade de resultados');
     for (const [level, value] of Object.entries(modeResults)) {
@@ -194,10 +200,10 @@ export function importSave(json: string): SaveData {
     }
   }
   const sessionsSource = object(source.sessions, 'partidas');
-  if (Object.keys(sessionsSource).length > 200) invalid('quantidade de partidas');
+  if (Object.keys(sessionsSource).length > 300) invalid('quantidade de partidas');
   const sessions: SaveData['sessions'] = {};
   for (const [key, value] of Object.entries(sessionsSource)) {
-    if (!/^(classic|cascade):(?:[1-9]\d?|100)$/.test(key)) invalid('identificador da partida');
+    if (!/^(classic|magazine|cascade):(?:[1-9]\d?|100)$/.test(key)) invalid('identificador da partida');
     const session = sessionFrom(value);
     if (key !== `${session.puzzle.mode}:${session.puzzle.level}`) invalid('partida em fase incorreta');
     sessions[key] = session;
@@ -242,7 +248,7 @@ export function recordCompletion(save: SaveData, session: Session): SaveData {
   const next: SaveData = {
     ...save,
     settings: { ...save.settings },
-    results: { classic: { ...save.results.classic }, cascade: { ...save.results.cascade } },
+    results: { classic: { ...save.results.classic }, magazine: { ...save.results.magazine }, cascade: { ...save.results.cascade } },
     sessions: { ...save.sessions, [`${mode}:${level}`]: structuredClone(session) },
   };
   if (!session.completed) return next;

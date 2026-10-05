@@ -22,7 +22,7 @@ class DomainTest {
 
     @Test fun nativePuzzlesExactlyMatchBrowserFixtures() {
         val puzzles=fixture().getJSONArray("puzzles")
-        assertEquals(8,puzzles.length())
+        assertEquals(12,puzzles.length())
         for(i in 0 until puzzles.length()) {
             val expected=puzzles.getJSONObject(i);val actual=engine.generatePuzzle("native-parity",Mode.fromWire(expected.getString("mode")),expected.getInt("level"))
             assertEquals("Browser and Android must generate the same grid",SaveCodec.canonical(expected),SaveCodec.canonical(SaveCodec.puzzleJson(actual)))
@@ -39,6 +39,7 @@ class DomainTest {
                 Engine.wordCells(word).forEachIndexed { index,cell -> assertTrue(cell.row in 0 until puzzle.rows);assertTrue(cell.col in 0 until puzzle.cols);assertTrue(solution[cell.key]==null||solution[cell.key]==word.answer[index]);solution[cell.key]=word.answer[index] }
             }
             if(mode==Mode.CLASSIC) { assertTrue(puzzle.words.any { it.direction=="across" });assertTrue(puzzle.words.any { it.direction=="down" });assertTrue(puzzle.rows<=28&&puzzle.cols<=28) }
+            if(mode==Mode.MAGAZINE) for(word in puzzle.words) { val clue=Engine.clueCell(word);assertTrue(clue.row in 0 until puzzle.rows&&clue.col in 0 until puzzle.cols);assertFalse(solution.containsKey(clue.key)) }
         }
         assertEquals(12,Engine.phaseRules(Mode.CLASSIC,1).count);assertEquals(30,Engine.phaseRules(Mode.CLASSIC,100).count)
         assertEquals(5,Engine.phaseRules(Mode.CASCADE,1).count);assertEquals(14,Engine.phaseRules(Mode.CASCADE,100).count)
@@ -75,7 +76,7 @@ class DomainTest {
     }
     @Test fun webSaveRoundTripPreservesBothModesAndRejectsCorruption() {
         val raw=fixture().getJSONObject("save");val save=SaveCodec.decode(raw.toString())
-        assertEquals(SaveCodec.canonical(raw),SaveCodec.encode(save));assertFalse(save.settings.sound);assertEquals(setOf("classic:1","cascade:1"),save.sessions.keys)
+        assertEquals(SaveCodec.canonical(raw),SaveCodec.encode(save));assertFalse(save.settings.sound);assertEquals(setOf("classic:1","magazine:1","cascade:1"),save.sessions.keys)
         assertEquals(save,SaveCodec.decode(SaveCodec.encode(save)))
         val corrupted=JSONObject(raw.toString());corrupted.getJSONObject("sessions").getJSONObject("classic:1").put("solved",org.json.JSONArray().put("unknown"))
         assertThrows(IllegalArgumentException::class.java) { SaveCodec.decode(corrupted.toString()) }
@@ -111,5 +112,40 @@ class DomainTest {
         reopened.switchProfile();reopened.selectProfile("daniel");reopened.prepare(Mode.CLASSIC,1);assertEquals(draft,reopened.state.session)
         reopened.selectWord(word.id);reopened.updateDraft("")
         Engine.wordCells(word).forEach { cell -> assertEquals(session.revealed[cell.key],reopened.state.session!!.values[cell.key]) }
+    }
+    @Test fun magazineOnlyChecksACompleteGridAndNeverRevealsPartialCorrectness() {
+        var session=Session(engine.generatePuzzle("native-magazine-check",Mode.MAGAZINE,1))
+        val first=session.puzzle.words.first()
+        session=Engine.submitWord(session,first.id,first.answer).session
+        assertTrue(session.solved.isEmpty());assertTrue(session.revealed.isEmpty());assertEquals(0,session.mistakes)
+        assertEquals("incomplete",Engine.checkGrid(session).status)
+        session=Engine.useHint(session,first.id);assertTrue(session.solved.isEmpty());assertEquals(1,session.hints)
+        for(word in session.puzzle.words) session=Engine.submitWord(session,word.id,word.answer).session
+        assertTrue(Engine.gridFill(session).full);assertFalse(session.completed)
+        val editable=session.values.keys.first { it !in session.revealed };val correct=session.values.getValue(editable)
+        session=session.copy(values=session.values+(editable to if(correct=="Z") "X" else "Z"))
+        val retry=Engine.checkGrid(session);assertEquals("retry",retry.status);assertEquals(session.values,retry.session.values);assertEquals(session.revealed,retry.session.revealed);assertTrue(retry.session.solved.isEmpty())
+        val complete=Engine.checkGrid(retry.session.copy(values=retry.session.values+(editable to correct))).session
+        assertTrue(complete.completed);assertEquals(session.puzzle.words.size,complete.solved.size)
+        val save=Engine.recordCompletion(SaveData(),complete);assertEquals(save,SaveCodec.decode(SaveCodec.encode(save)));assertEquals(2,Engine.unlockedLevel(save,Mode.MAGAZINE));assertEquals(1,Engine.unlockedLevel(save,Mode.CLASSIC))
+    }
+    @Test fun legacyTwoModeCampaignsMigrateWithoutLosingProgress() {
+        val source=fixture().getJSONObject("save");source.getJSONObject("results").remove("magazine");source.getJSONObject("sessions").remove("magazine:1")
+        val migrated=SaveCodec.decode(source.toString());assertTrue(migrated.results.getValue(Mode.MAGAZINE).isEmpty());assertEquals(setOf("classic:1","cascade:1"),migrated.sessions.keys)
+        val encoded=JSONObject(SaveCodec.encode(migrated));encoded.getJSONObject("results").remove("magazine")
+        assertEquals(SaveCodec.canonical(source),SaveCodec.canonical(encoded))
+    }
+    @Test fun choosingTheNextMagazineWordPreservesLettersEnteredAfterAnEmptySquare() {
+        val puzzle=engine.generatePuzzle("native-middle-draft",Mode.MAGAZINE,1)
+        repository.save("daniel",SaveData(seed="native-middle-draft",sessions=mapOf("magazine:1" to Session(puzzle))))
+        val model=GameViewModel(app);model.selectProfile("daniel");model.prepare(Mode.MAGAZINE,1)
+        val word=puzzle.words.first { it.answer.length>=4 };val cells=Engine.wordCells(word)
+        model.selectWord(word.id,cells[2].key)
+        val text=CharArray(word.answer.length) { ' ' }.apply { this[2]='Z' }.concatToString()
+        model.updateGridDraft(text,3)
+        assertEquals("Z",model.state.session!!.values[cells[2].key]);assertNull(model.state.session!!.values[cells[0].key])
+        val before=model.state.session!!.values;model.nextWord()
+        assertEquals(before,model.state.session!!.values)
+        model.onBackground();assertEquals(before,GameRepository(app).load("daniel").sessions.getValue("magazine:1").values)
     }
 }

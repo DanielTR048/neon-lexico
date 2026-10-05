@@ -112,10 +112,11 @@ class Engine(val themes: List<Theme>) {
         for (attempt in 0 until 36) {
             val random = Random("$seed:${mode.wire}:$level:${chosen.joinToString(",") { it.id }}:$attempt")
             val pool = shuffled(chosen.flatMap { t -> t.entries.map { e -> Candidate(e.copy(id="${t.id}:${e.id}",answer=normalizeAnswer(e.answer)),t) } }.filter { it.entry.answer.length in 3..rules.maxLength&&(level>20||it.entry.difficulty==1) },random)
-            words = if (mode == Mode.CLASSIC) crossword(pool,chosen,count,level,random) else cascade(pool,chosen,count,level,random)
+            words = if (mode != Mode.CASCADE) crossword(pool,chosen,count,level,random) else cascade(pool,chosen,count,level,random)
             if (words != null) break
         }
-        val found = words ?: error("Não foi possível montar esta grade. Sorteie novos temas.")
+        val generated = words ?: error("Não foi possível montar esta grade. Sorteie novos temas.")
+        val found = if (mode == Mode.MAGAZINE) generated.map { it.copy(row=it.row+1,col=it.col+1) } else generated
         val cells = found.flatMap(::wordCells)
         return Puzzle("${mode.wire}:$level:$seed:${chosen.joinToString(".") { it.id }}",mode,level,chosen.map { it.id },found,cells.maxOf { it.row }+1,cells.maxOf { it.col }+1,if(level<=10) "Primeiras conexões" else if(level<=20) "Iniciante" else if(level<=40) "Aprendiz" else if(level<=60) "Intermediário" else if(level<=80) "Avançado" else "Especialista")
     }
@@ -123,10 +124,21 @@ class Engine(val themes: List<Theme>) {
         const val MAX_HINTS=3
         val BEGINNER_THEME_IDS=setOf("natureza","gastronomia","anatomia","musica","artes","geografia","astronomia","superpoderes","emocoes","literatura","cinema","portugues")
         data class PhaseRules(val difficulty: Int,val maxLength: Int,val count: Int)
-        fun phaseRules(mode: Mode,level: Int): PhaseRules { require(level in 1..100);return PhaseRules(if(level<=20) 1 else if(level<=60) 2 else 3,if(level<=10) 6 else if(level<=20) 8 else if(level<=40) 10 else if(level<=60) 12 else if(level<=80) 15 else 20,if(mode==Mode.CLASSIC) min(30,12+(level-1)/5) else min(14,5+(level-1)/10)) }
+        fun phaseRules(mode: Mode,level: Int): PhaseRules { require(level in 1..100);return PhaseRules(if(level<=20) 1 else if(level<=60) 2 else 3,if(level<=10) 6 else if(level<=20) 8 else if(level<=40) 10 else if(level<=60) 12 else if(level<=80) 15 else 20,if(mode!=Mode.CASCADE) min(30,12+(level-1)/5) else min(14,5+(level-1)/10)) }
         fun normalizeAnswer(value: String) = Normalizer.normalize(value,Normalizer.Form.NFD).replace(Regex("[\\u0300-\\u036f]"),"").uppercase(java.util.Locale.ROOT).replace(Regex("[^A-Z]"),"")
         fun randomSeed() = UUID.randomUUID().toString()
         fun wordCells(word: PuzzleWord) = word.answer.indices.map { Cell(word.row+if(word.direction=="down") it else 0,word.col+if(word.direction=="across") it else 0) }
+        fun clueCell(word: PuzzleWord) = Cell(word.row-if(word.direction=="down") 1 else 0,word.col-if(word.direction=="across") 1 else 0)
+        data class GridFill(val filled: Int,val total: Int) { val full: Boolean get()=filled==total }
+        fun gridFill(session: Session): GridFill { val keys=session.puzzle.words.flatMap(::wordCells).map { it.key }.toSet();return GridFill(keys.count { !session.values[it].isNullOrEmpty() },keys.size) }
+        data class GridResult(val session: Session,val status: String)
+        fun checkGrid(session: Session): GridResult {
+            if(!gridFill(session).full) return GridResult(session,"incomplete")
+            if(session.completed) return GridResult(session,"complete")
+            if(!session.puzzle.words.all { word -> wordCells(word).withIndex().all { session.values[it.value.key]==word.answer[it.index].toString() } }) return GridResult(session.copy(mistakes=session.mistakes+1),"retry")
+            val revealed=session.revealed.toMutableMap();session.puzzle.words.forEach { word -> wordCells(word).forEachIndexed { index,cell -> revealed[cell.key]=word.answer[index].toString() } }
+            return GridResult(session.copy(solved=session.puzzle.words.map { it.id },revealed=revealed,completed=true),"complete")
+        }
         fun getStars(session: Session) = if(!session.completed) 0 else if(session.mistakes==0&&session.hints==0) 3 else if(session.mistakes+session.hints<=4) 2 else 1
         fun getScore(session: Session) = max(0,session.puzzle.words.filter { it.id in session.solved }.sumOf { 100+it.answer.length*25 }+(if(session.completed) session.puzzle.level*20 else 0)-session.mistakes*40-session.hints*60-session.elapsed/5)
         fun unlockedLevel(save: SaveData, mode: Mode) = (1..100).firstOrNull { !save.results.getValue(mode).containsKey(it.toString()) } ?: 100
@@ -158,6 +170,11 @@ class Engine(val themes: List<Theme>) {
         fun submitWord(session: Session, id: String, answer: String): AnswerResult {
             val word=session.puzzle.words.firstOrNull { it.id==id } ?: return AnswerResult(session,false,emptyList())
             if(session.completed||id in session.solved) return AnswerResult(session,id in session.solved,emptyList())
+            if(session.puzzle.mode==Mode.MAGAZINE) {
+                val input=normalizeAnswer(answer).take(word.answer.length);val values=session.values.toMutableMap()
+                wordCells(word).forEachIndexed { index,cell -> if(cell.key !in session.revealed) { if(index<input.length) values[cell.key]=input[index].toString() else values.remove(cell.key) } }
+                return AnswerResult(session.copy(values=values),false,emptyList())
+            }
             if(normalizeAnswer(answer)!=word.answer) return AnswerResult(session.copy(mistakes=session.mistakes+1),false,emptyList())
             val values=session.values.toMutableMap();val revealed=session.revealed.toMutableMap()
             wordCells(word).forEachIndexed { index,cell -> val letter=word.answer[index].toString();values[cell.key]=letter;revealed[cell.key]=letter }
@@ -173,7 +190,7 @@ class Engine(val themes: List<Theme>) {
                 if(lower.row<=word.row) continue
                 wordCells(lower).forEachIndexed { index,cell -> if(lower.answer[index].toString()==letter) { values[cell.key]=letter;revealed[cell.key]=letter } }
             }
-            return finish(session.copy(hints=session.hints+1),values,session.solved.toMutableList(),revealed)
+            return if(session.puzzle.mode==Mode.MAGAZINE) session.copy(hints=session.hints+1,values=values,revealed=revealed) else finish(session.copy(hints=session.hints+1),values,session.solved.toMutableList(),revealed)
         }
     }
 }
