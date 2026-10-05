@@ -25,6 +25,7 @@ import java.time.Duration
 @Config(sdk = [35], qualifiers = "w393dp-h873dp-xhdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @LooperMode(LooperMode.Mode.PAUSED)
+@OptIn(ExperimentalTestApi::class)
 class NativeUiTest {
     @get:Rule val compose = createAndroidComposeRule<MainActivity>()
     private lateinit var model: GameViewModel

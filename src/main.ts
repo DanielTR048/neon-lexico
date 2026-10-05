@@ -552,15 +552,21 @@ app.addEventListener('beforeinput',event=>{
   if(edit.inputType==='deleteContentBackward'||edit.inputType==='deleteContentForward'){
     edit.preventDefault();typeKey(edit.inputType==='deleteContentBackward'?'Backspace':'Delete');return;
   }
-  if(edit.data&&normalizeAnswer(edit.data).length>1){edit.preventDefault();insertGridText(edit.data);}
+  if(edit.data&&normalizeAnswer(edit.data).length>1){
+    edit.preventDefault();
+    if(input.selectionStart===0&&input.selectionEnd===activeWord()?.answer.length){applyInput(edit.data);syncAnswerField();}
+    else insertGridText(edit.data);
+  }
 });
 function insertGridText(text: string) {
   const word=activeWord();if(!word)return;
   for(const letter of normalizeAnswer(text).slice(0,word.answer.length-cursor))typeKey(letter);
 }
 app.addEventListener('paste',event=>{
-  if((event.target as HTMLElement).id!=='answer-input')return;
-  event.preventDefault();insertGridText(event.clipboardData?.getData('text/plain')||'');
+  const input=event.target as HTMLInputElement;if(input.id!=='answer-input')return;
+  event.preventDefault();const text=event.clipboardData?.getData('text/plain')||'';
+  if(input.selectionStart===0&&input.selectionEnd===activeWord()?.answer.length){applyInput(text);syncAnswerField();}
+  else insertGridText(text);
 });
 app.addEventListener('compositionend',event=>{const input=event.target as HTMLInputElement;if(input.id==='answer-input')receiveGridInput(input);});
 app.addEventListener('focusin', event => {
