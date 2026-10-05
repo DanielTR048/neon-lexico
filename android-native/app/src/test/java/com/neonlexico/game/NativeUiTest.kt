@@ -54,11 +54,12 @@ class NativeUiTest {
         screenshot("android-home")
     }
 
-    @Test fun classicAndCascadeBoardsAcceptNativeInputAndResume() {
+    @Test(timeout=120_000) fun classicAndCascadeBoardsAcceptNativeInputAndResume() {
         compose.onNodeWithContentDescription("Entrar como Daniel").performClick()
         for (mode in listOf(Mode.CLASSIC,Mode.CASCADE)) {
             compose.runOnIdle { model.prepare(mode, 1); assertEquals(Screen.SETUP, model.state.screen); assertEquals(5, model.state.selectedThemes.size) }
             if (mode == Mode.CLASSIC) screenshot("android-setup")
+            println("Native flow ${mode.wire}: begin")
             compose.onNodeWithText("ENTRAR NO CIRCUITO →").performScrollTo().performClick()
             awaitPlay()
             compose.runOnIdle { assertEquals(Screen.PLAY, model.state.screen); assertNotNull(model.state.session) }
@@ -81,10 +82,12 @@ class NativeUiTest {
             compose.onNodeWithContentDescription("Resposta para pista ${first.number}").assertTextContains(partial,substring=true)
             compose.onNodeWithContentDescription("Resposta para pista ${first.number}").assertExists().performTextReplacement(first.answer)
             compose.onNodeWithContentDescription("Resposta para pista ${first.number}").assertTextContains(first.answer)
+            println("Native flow ${mode.wire}: confirm resumed draft")
             compose.onNodeWithText("CONECTAR →").assertIsDisplayed().performClick()
             compose.runOnIdle { assertTrue("answer=${first.answer}; active=${model.state.activeWordId}; solved=${model.state.session!!.solved}; mistakes=${model.state.session!!.mistakes}", first.id in model.state.session!!.solved) }
             val before = model.state.session!!
             compose.runOnIdle { model.navigate(Screen.MAP); model.prepare(mode, 1); assertEquals(before.solved, model.state.session!!.solved) }
+            println("Native flow ${mode.wire}: complete campaign phase")
             compose.runOnIdle {
                 for (word in model.state.session!!.puzzle.words) {
                     model.selectWord(word.id); model.submitAnswer(word.answer)
@@ -94,9 +97,11 @@ class NativeUiTest {
             }
             compose.onNodeWithText("Conexão estabelecida.").assertExists()
             screenshot(if (mode == Mode.CLASSIC) "android-classic-victory" else "android-cascade-victory")
+            println("Native flow ${mode.wire}: advance after victory")
             compose.onNodeWithText("PRÓXIMA FREQUÊNCIA →").performScrollTo().performClick()
             compose.runOnIdle { assertEquals(Screen.SETUP, model.state.screen); assertEquals(2, model.state.level) }
             compose.runOnIdle { model.prepare(mode, 1) }
+            println("Native flow ${mode.wire}: replay")
             compose.onNodeWithText("JOGAR NOVAMENTE ↻").performScrollTo().performClick()
             compose.runOnIdle { assertEquals(Screen.SETUP, model.state.screen); assertEquals(1, model.state.level) }
         }

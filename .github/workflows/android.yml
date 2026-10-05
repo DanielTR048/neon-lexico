@@ -26,8 +26,25 @@ jobs:
       - run: node scripts/sync-android-assets.mjs
       - run: npx tsx scripts/generate-native-fixtures.ts
       - name: Verify native Android
+        timeout-minutes: 6
         working-directory: android-native
-        run: gradle testDebugUnitTest lintDebug assembleDebug --console=plain
+        run: |
+          gradle testDebugUnitTest lintDebug assembleDebug --console=plain &
+          build_pid=$!
+          (
+            sleep 150
+            if kill -0 "$build_pid" 2>/dev/null; then
+              mkdir -p app/build/reports/thread-dumps
+              jps -l | awk '/GradleWorkerMain/ { print $1 }' | while read -r worker_pid; do
+                jstack "$worker_pid" > "app/build/reports/thread-dumps/worker-$worker_pid.txt" || true
+              done
+            fi
+          ) &
+          monitor_pid=$!
+          result=0
+          wait "$build_pid" || result=$?
+          kill "$monitor_pid" 2>/dev/null || true
+          exit "$result"
       - uses: actions/upload-artifact@v4
         with:
           name: Neon-Lexico-Android-preview

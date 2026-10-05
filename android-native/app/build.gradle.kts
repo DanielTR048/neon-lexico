@@ -64,3 +64,7 @@ dependencies {
     testImplementation(platform("androidx.compose:compose-bom:2025.04.01"))
     testImplementation("androidx.compose.ui:ui-test-junit4")
 }
+
+tasks.withType<Test>().configureEach {
+    testLogging.events("started", "passed", "failed", "skipped")
+}
