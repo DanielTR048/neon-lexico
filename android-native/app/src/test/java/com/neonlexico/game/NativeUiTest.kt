@@ -78,7 +78,7 @@ class NativeUiTest {
             compose.runOnIdle { assertTrue(model.state.save.sessions.isEmpty()); model.switchProfile() }
             compose.onNodeWithContentDescription("Entrar como Daniel").performClick()
             compose.runOnIdle { model.prepare(mode, 1); model.selectWord(first.id) }
-            compose.onNodeWithContentDescription("Resposta para pista ${first.number}").assertTextContains(partial)
+            compose.onNodeWithContentDescription("Resposta para pista ${first.number}").assertTextContains(partial,substring=true)
             compose.onNodeWithContentDescription("Resposta para pista ${first.number}").assertExists().performTextReplacement(first.answer)
             compose.onNodeWithContentDescription("Resposta para pista ${first.number}").assertTextContains(first.answer)
             compose.onNodeWithText("CONECTAR →").assertIsDisplayed().performClick()
@@ -190,7 +190,9 @@ class NativeUiTest {
             compose.runOnIdle { assertEquals(index + 1, model.state.session!!.hints) }
         }
         compose.onNodeWithContentDescription("Revelar uma letra, 0 dicas restantes").assertIsNotEnabled()
-        compose.onNodeWithText("Letras conectadas:", substring = true).assertExists()
+        val revealed=model.state.session!!.revealed.entries.first()
+        val position=revealed.key.split(":")
+        compose.onAllNodes(hasContentDescription("casa ${position[0]},${position[1]}, ${revealed.value}",substring=true)).onFirst().assertIsDisplayed()
         compose.runOnIdle {
             val before = model.state.session!!
             assertTrue(before.revealed.isNotEmpty())
