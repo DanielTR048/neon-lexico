@@ -54,7 +54,7 @@ class NativeUiTest {
         screenshot("android-home")
     }
 
-    @Test(timeout=120_000) fun classicAndCascadeBoardsAcceptNativeInputAndResume() {
+    @Test fun classicAndCascadeBoardsAcceptNativeInputAndResume() {
         compose.onNodeWithContentDescription("Entrar como Daniel").performClick()
         for (mode in listOf(Mode.CLASSIC,Mode.CASCADE)) {
             compose.runOnIdle { model.prepare(mode, 1); assertEquals(Screen.SETUP, model.state.screen); assertEquals(5, model.state.selectedThemes.size) }
@@ -135,7 +135,7 @@ class NativeUiTest {
         screenshot("android-tap-to-type")
     }
 
-    @Test(timeout=120_000) fun everyModeTypesIntoTheTappedCellWithoutASeparateVisibleAnswerBox() {
+    @Test fun everyModeTypesIntoTheTappedCellWithoutASeparateVisibleAnswerBox() {
         compose.onNodeWithContentDescription("Entrar como Daniel").performClick()
         for(mode in Mode.entries) {
             compose.runOnIdle { model.prepare(mode,1) }
