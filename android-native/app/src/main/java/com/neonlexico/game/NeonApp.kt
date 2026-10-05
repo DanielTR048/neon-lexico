@@ -13,6 +13,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -645,6 +647,8 @@ private fun score(session: Session) = Engine.getScore(session)
 @Composable
 private fun NativePuzzleBoard(session: Session, selected: PuzzleWord, cursor: Int, selectWord: (String,String?) -> Unit) {
     var zoom by rememberSaveable(session.puzzle.id) { mutableIntStateOf(0) }
+    val cursorKey=if(session.completed) null else cells(selected).getOrNull(cursor)?.key
+    val cursorView=rememberGridCursor(cursorKey,zoom to session.hints)
     val all = session.puzzle.words.flatMap(::cells).map(::cellKey).toSet()
     val active = cells(selected).map(::cellKey).toSet()
     val solved = session.puzzle.words.filter { it.id in session.solved }.flatMap(::cells).map(::cellKey).toSet()
@@ -664,7 +668,7 @@ private fun NativePuzzleBoard(session: Session, selected: PuzzleWord, cursor: In
                     session.puzzle.words.forEach { word ->
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(3.dp)) {
                             Text(word.number.toString().padStart(2, '0'), color = Muted, fontSize = 9.sp, fontFamily = FontFamily.Monospace, modifier = Modifier.width(23.dp))
-                            cells(word).forEach { cell -> BoardCell(cellKey(cell), session, active, solved, null, cellSize,cell.key==cells(selected).getOrNull(cursor)?.key) { selectWord(word.id,cell.key) } }
+                            cells(word).forEach { cell -> BoardCell(cellKey(cell), session, active, solved, null, cellSize,cell.key==cursorKey,cursorView) { selectWord(word.id,cell.key) } }
                             if (word.id in session.solved) Text(" ✓", color = Amber, fontSize = 12.sp)
                         }
                     }
@@ -674,7 +678,7 @@ private fun NativePuzzleBoard(session: Session, selected: PuzzleWord, cursor: In
                             repeat(session.puzzle.cols) { col ->
                                 val key = "$row:$col"
                                 if (key !in all) Spacer(Modifier.size(cellSize))
-                                else BoardCell(key, session, active, solved, numbers[key], cellSize,key==cells(selected).getOrNull(cursor)?.key) {
+                                else BoardCell(key, session, active, solved, numbers[key], cellSize,key==cursorKey,cursorView) {
                                     val matching = session.puzzle.words.filter { candidate -> cells(candidate).any { cellKey(it) == key } }
                                     val next = if (selected in matching && matching.size > 1) matching.first { it.id != selected.id } else matching.firstOrNull()
                                     next?.let { selectWord(it.id,key) }
@@ -694,10 +698,10 @@ private fun NativePuzzleBoard(session: Session, selected: PuzzleWord, cursor: In
 }
 
 @Composable
-private fun BoardCell(key: String, session: Session, active: Set<String>, solved: Set<String>, number: Int?, size: androidx.compose.ui.unit.Dp, cursor: Boolean, onClick: () -> Unit) {
+private fun BoardCell(key: String, session: Session, active: Set<String>, solved: Set<String>, number: Int?, size: androidx.compose.ui.unit.Dp, cursor: Boolean, cursorView: BringIntoViewRequester, onClick: () -> Unit) {
     val isSolved = key in solved
     val isActive = key in active
-    Box(Modifier.size(size).clip(RoundedCornerShape(2.dp)).background(when { isSolved -> Amber.copy(alpha = .14f); isActive -> Amber.copy(alpha = .10f); else -> Color(0xFF2D2633) }).border(if(cursor) 2.5.dp else 1.dp, if (isSolved || isActive) Amber.copy(alpha = if(cursor) 1f else .55f) else Color(0xFF4C3C53), RoundedCornerShape(2.dp)).clickable(onClick = onClick).semantics { contentDescription = "${if (number != null) "Palavra $number, " else ""}casa ${key.replace(':', ',')}, ${session.values[key] ?: "vazia"}" }, contentAlignment = Alignment.Center) {
+    Box(Modifier.size(size).then(if(cursor) Modifier.bringIntoViewRequester(cursorView) else Modifier).clip(RoundedCornerShape(2.dp)).background(when { isSolved -> Amber.copy(alpha = .14f); isActive -> Amber.copy(alpha = .10f); else -> Color(0xFF2D2633) }).border(if(cursor) 2.5.dp else 1.dp, if (isSolved || isActive) Amber.copy(alpha = if(cursor) 1f else .55f) else Color(0xFF4C3C53), RoundedCornerShape(2.dp)).clickable(onClick = onClick).semantics { contentDescription = "${if (number != null) "Palavra $number, " else ""}casa ${key.replace(':', ',')}, ${session.values[key] ?: "vazia"}" }, contentAlignment = Alignment.Center) {
         if (number != null) Text(number.toString(), color = Muted, fontSize = 8.sp, modifier = Modifier.align(Alignment.TopStart).padding(start = 2.dp))
         Text(session.values[key] ?: "", color = if (isSolved || isActive || session.revealed.containsKey(key)) Amber else Ink, fontFamily = FontFamily.Monospace, fontSize = 14.sp)
     }

@@ -67,4 +67,7 @@ dependencies {
 
 tasks.withType<Test>().configureEach {
     testLogging.events("started", "passed", "failed", "skipped")
+    systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
+    systemProperty("sun.net.client.defaultConnectTimeout", "20000")
+    systemProperty("sun.net.client.defaultReadTimeout", "20000")
 }

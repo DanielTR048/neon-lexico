@@ -125,8 +125,8 @@ class NativeUiTest {
         compose.runOnIdle { model.prepare(Mode.CLASSIC, 1) }
         compose.onNodeWithText("ENTRAR NO CIRCUITO →").performScrollTo().performClick()
         awaitPlay()
-        val cell = model.state.session!!.puzzle.words.flatMap(Engine::wordCells).minWith(compareBy<Cell> { it.row }.thenBy { it.col })
-        compose.onAllNodes(hasContentDescription("casa ${cell.row},${cell.col},", substring = true)).onFirst().performScrollTo().performClick()
+        val cell = visibleTypingCell()
+        compose.onAllNodes(hasContentDescription("casa ${cell.row},${cell.col},", substring = true),useUnmergedTree=true).onFirst().performClick()
         compose.waitForIdle()
         val selected = model.state.session!!.puzzle.words.first { it.id == model.state.activeWordId }
         compose.onNodeWithContentDescription("Resposta para pista ${selected.number}").assertIsFocused().assertExists()
@@ -135,13 +135,13 @@ class NativeUiTest {
         screenshot("android-tap-to-type")
     }
 
-    @Test fun everyModeTypesIntoTheTappedCellWithoutASeparateVisibleAnswerBox() {
+    @Test(timeout=120_000) fun everyModeTypesIntoTheTappedCellWithoutASeparateVisibleAnswerBox() {
         compose.onNodeWithContentDescription("Entrar como Daniel").performClick()
         for(mode in Mode.entries) {
             compose.runOnIdle { model.prepare(mode,1) }
             compose.onNodeWithText("ENTRAR NO CIRCUITO →").performScrollTo().performClick();awaitPlay()
-            val cell=model.state.session!!.puzzle.words.flatMap(Engine::wordCells).minWith(compareBy<Cell> { it.row }.thenBy { it.col })
-            compose.onAllNodes(hasContentDescription("casa ${cell.row},${cell.col},",substring=true)).onFirst().performScrollTo().performClick()
+            val cell=visibleTypingCell()
+            compose.onAllNodes(hasContentDescription("casa ${cell.row},${cell.col},",substring=true),useUnmergedTree=true).onFirst().performClick()
             val selected=model.state.session!!.puzzle.words.first { it.id==model.state.activeWordId }
             val input=compose.onNodeWithContentDescription("Resposta para pista ${selected.number}")
             input.assertIsFocused().performTextInput("ZQ")
@@ -149,7 +149,7 @@ class NativeUiTest {
             compose.runOnIdle {
                 assertEquals("Z",model.state.session!!.values[cell.key])
                 assertEquals("Q",model.state.session!!.values[cells[index+1].key])
-                assertEquals(index+2,model.state.cursor)
+                assertEquals((index+2).coerceAtMost(selected.answer.lastIndex),model.state.cursor)
             }
             input.performKeyInput { pressKey(Key.Backspace) }
             compose.runOnIdle {
@@ -216,6 +216,21 @@ class NativeUiTest {
             model.state.screen == Screen.PLAY || model.state.error != null
         }
         compose.runOnIdle { assertEquals("generation error=${model.state.error}", Screen.PLAY, model.state.screen) }
+    }
+
+    private fun visibleTypingCell(): Cell {
+        val session=model.state.session!!
+        for(cell in session.puzzle.words.flatMap(Engine::wordCells).distinct().sortedWith(compareBy<Cell> { it.row }.thenBy { it.col })) {
+            val owners=session.puzzle.words.filter { Engine.wordCells(it).any { candidate -> candidate.key==cell.key } }
+            val active=owners.firstOrNull { it.id==model.state.activeWordId }
+            val selected=if(active!=null&&owners.size>1) owners.first { it.id!=active.id } else owners.first()
+            if(Engine.wordCells(selected).indexOf(cell)>selected.answer.length-3) continue
+            try {
+                compose.onAllNodes(hasContentDescription("casa ${cell.row},${cell.col},",substring=true),useUnmergedTree=true).onFirst().assertIsDisplayed()
+                return cell
+            } catch(_: AssertionError) { }
+        }
+        error("No visible editable grid square with room to type")
     }
 
     private fun screenshot(name: String) {

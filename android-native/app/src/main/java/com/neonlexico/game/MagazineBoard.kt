@@ -6,6 +6,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
@@ -24,6 +25,8 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun NativeMagazineBoard(session: Session, selected: PuzzleWord, cursor: Int, selectWord: (String,String?) -> Unit) {
     var size by rememberSaveable(session.puzzle.id) { mutableIntStateOf(88) }
+    val cursorKey=if(session.completed) null else Engine.wordCells(selected).getOrNull(cursor)?.key
+    val cursorView=rememberGridCursor(cursorKey,size to session.hints)
     val letters=session.puzzle.words.flatMap(Engine::wordCells).map { it.key }.toSet()
     val active=Engine.wordCells(selected).map { it.key }.toSet()
     val clues=session.puzzle.words.groupBy { Engine.clueCell(it).key }
@@ -50,7 +53,7 @@ fun NativeMagazineBoard(session: Session, selected: PuzzleWord, cursor: Int, sel
                                     }
                                 }
                             }
-                            key in letters -> Box(Modifier.size(size.dp).background(if(key in active) selectedPaper else paper).border(if(key==Engine.wordCells(selected).getOrNull(cursor)?.key) 3.dp else .5.dp,if(key in active) Color(0xFFBA7925) else line).clickable {
+                            key in letters -> Box(Modifier.size(size.dp).then(if(key==cursorKey) Modifier.bringIntoViewRequester(cursorView) else Modifier).background(if(key in active) selectedPaper else paper).border(if(key==cursorKey) 3.dp else .5.dp,if(key in active) Color(0xFFBA7925) else line).clickable {
                                 val owners=session.puzzle.words.filter { word -> Engine.wordCells(word).any { it.key==key } }
                                 val next=if(selected in owners&&owners.size>1) owners.first { it.id!=selected.id } else owners.first()
                                 selectWord(next.id,key)

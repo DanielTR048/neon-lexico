@@ -48,7 +48,7 @@ class GameViewModel(application: Application): AndroidViewModel(application) {
         if(level !in 1..100||level>Engine.unlockedLevel(state.save,mode)) { state=state.copy(error="Conclua a fase anterior para liberar esta conexão.");return }
         if(state.screen==Screen.PLAY&&!persist()) return
         val session=state.save.sessions["${mode.wire}:$level"]
-        if(session!=null&&!replay) { state=state.copy(mode=mode,level=level,screen=Screen.PLAY,activeWordId=session.puzzle.words.firstOrNull { it.id !in session.solved }?.id?:session.puzzle.words.first().id);return }
+        if(session!=null&&!replay) { state=state.copy(mode=mode,level=level,screen=Screen.PLAY,activeWordId=session.puzzle.words.firstOrNull { it.id !in session.solved }?.id?:session.puzzle.words.first().id,cursor=0);selectWord(state.activeWordId);return }
         state=state.copy(mode=mode,level=level,screen=Screen.SETUP,selectedThemes=engine.drawThemes("${state.save.seed}:$drawCount",mode,level))
     }
     fun shuffleThemes() { drawCount++;state=state.copy(selectedThemes=engine.drawThemes("${state.save.seed}:$drawCount",state.mode,state.level)) }
@@ -61,7 +61,7 @@ class GameViewModel(application: Application): AndroidViewModel(application) {
             beginning=false
             if(generation!=selectedGeneration||state.activeProfileId!=id||state.screen!=Screen.SETUP||state.mode!=context.mode||state.level!=context.level||state.save.seed!=context.save.seed||state.selectedThemes!=context.selectedThemes) return@launch
             result.onSuccess { session ->
-                state=state.copy(save=state.save.copy(sessions=state.save.sessions+("${state.mode.wire}:${state.level}" to session)),screen=Screen.PLAY,activeWordId=session.puzzle.words.first().id);revision++;persist()
+                state=state.copy(save=state.save.copy(sessions=state.save.sessions+("${state.mode.wire}:${state.level}" to session)),screen=Screen.PLAY,activeWordId=session.puzzle.words.first().id,cursor=0);revision++;persist()
             }.onFailure { state=state.copy(error="O sinal falhou. Sorteie outros temas e tente novamente.") }
         }
     }
