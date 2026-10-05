@@ -22,6 +22,18 @@ for (const mode of MODES) test(`${mode}: tapping a middle square types there, ad
   typed = (await read()).sessions[`${mode}:1`]; expect(typed.values[cells[index + 1].key]).toBeUndefined(); expect(typed.values[cells[index].key]).toBe('Z'); expect(typed.mistakes).toBe(0);
   await page.keyboard.press('ArrowLeft'); await page.keyboard.type('A');
   expect((await read()).sessions[`${mode}:1`].values[cells[index].key]).toBe('A');
+  await page.locator('#answer-input').evaluate(input => {
+    const clipboardData=new DataTransfer();clipboardData.setData('text/plain','É L');
+    input.dispatchEvent(new ClipboardEvent('paste',{bubbles:true,cancelable:true,clipboardData}));
+  });
+  typed=(await read()).sessions[`${mode}:1`];
+  expect(typed.values[cells[index].key]).toBe('A');
+  expect(typed.values[cells[index+1].key]).toBe('E');expect(typed.values[cells[index+2].key]).toBe('L');
+  if(mode==='magazine') {
+    const before=typed.values;await page.keyboard.press('Enter');
+    expect((await read()).sessions['magazine:1'].values).toEqual(before);
+    await page.locator(`[data-cell="${cells[index].key}"]`).click();
+  }
   await expect(page.locator('#active-clue')).toHaveText(word.clue);
   if (info.project.name === 'mobile') await page.screenshot({ path: `test-results/direct-grid-${mode}.png`, fullPage: false });
 });
