@@ -1,27 +1,36 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { checkGrid, clueCell, createSession, generatePuzzle, gridFill, submitWord, useHint, wordCells } from '../src/engine';
+import { MAGAZINE_COLS, MAGAZINE_ROWS, checkGrid, clueCell, createSession, generatePuzzle, gridFill, submitWord, useHint, wordCells } from '../src/engine';
 import { createSave, exportSave, importSave, recordCompletion, unlockedLevel } from '../src/storage';
 
-test('every magazine phase has connected words and safe clue squares before the answers', () => {
+test('every magazine phase packs the same fixed frame with legal clue squares', () => {
   for (const seed of ['magazine-campaign', 'revista-daniel', 'revista-larissa']) for (let level = 1; level <= 100; level++) {
     const puzzle = generatePuzzle(seed, 'magazine', level);
+    assert.equal(puzzle.rows, MAGAZINE_ROWS); assert.equal(puzzle.cols, MAGAZINE_COLS);
     const solution = new Map<string, string>();
     for (const word of puzzle.words) for (const cell of wordCells(word)) {
       assert.ok(!solution.has(cell.key) || solution.get(cell.key) === cell.letter);
       solution.set(cell.key, cell.letter);
     }
+    const clueSlots = new Set<string>();
     for (const word of puzzle.words) {
       const clue = clueCell(word);
       assert.ok(clue.row >= 0 && clue.row < puzzle.rows && clue.col >= 0 && clue.col < puzzle.cols);
       assert.equal(solution.has(clue.key), false, `A clue may never cover an answer: ${seed} ${level}`);
-      assert.ok(puzzle.words.some(other => other.id !== word.id && wordCells(other).some(cell => wordCells(word).some(c => c.key === cell.key))));
+      assert.ok(!clueSlots.has(`${clue.key}:${word.direction}`), 'one clue per direction in each square');
+      clueSlots.add(`${clue.key}:${word.direction}`);
+      const last = wordCells(word).at(-1)!, after = word.direction === 'across' ? `${last.row}:${last.col + 1}` : `${last.row + 1}:${last.col}`;
+      assert.equal(solution.has(after), false, 'answers end at a clue square or at the border');
+      assert.ok(word.themeId && puzzle.themeIds.includes(word.themeId));
     }
+    assert.ok(solution.size >= puzzle.rows * puzzle.cols * 0.6, `packed frame: ${seed} ${level}`);
     if (level <= 10) assert.ok(puzzle.words.every(word => word.difficulty === 1 && word.answer.length <= 6));
-    assert.equal(puzzle.words.length, Math.min(30, 12 + Math.floor((level - 1) / 5)));
+    if (level <= 60) assert.ok(puzzle.words.every(word => word.difficulty <= 2));
     const save = createSave(); save.sessions[`magazine:${level}`] = createSession(puzzle);
     assert.deepEqual(importSave(exportSave(save)), save);
   }
+  const average = (level: number) => { const words = generatePuzzle('curve', 'magazine', level).words; return words.reduce((sum, word) => sum + word.difficulty, 0) / words.length; };
+  assert.ok(average(100) > average(40) && average(40) > average(1));
 });
 
 test('magazine drafts and hints never disclose or lock correct words before the final check', () => {

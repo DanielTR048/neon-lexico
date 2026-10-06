@@ -101,6 +101,16 @@ function candidatePool(selected: Theme[], random: Random, mode: Mode, level: num
   }))).filter(candidate => candidate.entry.answer.length >= 3 && candidate.entry.answer.length <= rules.maxLength && (level > 20 || candidate.entry.difficulty === 1)), random);
 }
 
+/** Magazine frames need far more words than five themes hold, so they use the whole catalog. */
+function magazinePool(random: Random, level: number): Candidate[] {
+  const rules = phaseRules('magazine', level);
+  return shuffled(themes.flatMap(theme => theme.entries.map(entry => ({
+    theme,
+    entry: { ...entry, answer: normalizeAnswer(entry.answer), id: `${theme.id}:${entry.id}` },
+  }))).filter(candidate => candidate.entry.answer.length >= 3 && candidate.entry.answer.length <= rules.maxLength
+    && (level > 20 || candidate.entry.difficulty === 1) && (level > 60 || candidate.entry.difficulty <= 2)), random);
+}
+
 function toWord(candidate: Candidate, row: number, col: number, direction: 'across' | 'down'): PuzzleWord {
   return { ...candidate.entry, themeId: candidate.theme.id, themeName: candidate.theme.name, row, col, direction, number: 0 };
 }
@@ -236,6 +246,138 @@ function cascade(pool: Candidate[], selected: Theme[], count: number, level: num
   return covered.size === 5 ? words : null;
 }
 
+/** Fixed magazine frame: every phase fills the same portrait grid that fits a phone screen. */
+export const MAGAZINE_ROWS = 13;
+export const MAGAZINE_COLS = 10;
+
+type MagazinePick = { candidate: number; row: number; col: number; direction: 'across' | 'down'; score: number };
+
+/**
+ * Arrowword fill for a fixed frame. Each clue sits in the square before its answer and holds at most
+ * one horizontal and one vertical clue. Crossing placements come first; then every remaining empty
+ * square is either covered by a word or turned into a block, so the frame ends up packed.
+ */
+function magazine(pool: Candidate[], selected: Theme[], level: number, random: Random): PuzzleWord[] | null {
+  const rows = MAGAZINE_ROWS, cols = MAGAZINE_COLS, size = rows * cols;
+  const rules = phaseRules('magazine', level);
+  const maxLength = Math.min(rules.maxLength, Math.max(rows, cols) - 1);
+  const grid: string[] = Array(size).fill('');
+  const usedAcross: boolean[] = Array(size).fill(false), usedDown: boolean[] = Array(size).fill(false);
+  const clueAcross: boolean[] = Array(size).fill(false), clueDown: boolean[] = Array(size).fill(false);
+  const selectedIds = selected.map(theme => theme.id);
+  const placed: MagazinePick[] = [];
+  const used = new Set<string>();
+  const byLength = new Map<number, number[]>();
+  const byLetter = new Map<string, number[]>();
+  const push = <K>(map: Map<K, number[]>, key: K, value: number) => { const list = map.get(key); if (list) list.push(value); else map.set(key, [value]); };
+  pool.forEach((candidate, index) => {
+    const answer = candidate.entry.answer;
+    push(byLength, answer.length, index);
+    for (let position = 0; position < answer.length; position++) push(byLetter, `${answer.length}:${position}:${answer[position]}`, index);
+  });
+  grid[0] = '#';
+  const isLetter = (value: string) => value !== '' && value !== '#';
+
+  function evaluate(row: number, col: number, direction: 'across' | 'down', length: number, best: MagazinePick | null, requireCrossing: boolean): MagazinePick | null {
+    const dr = direction === 'down' ? 1 : 0, dc = direction === 'across' ? 1 : 0;
+    const clueRow = row - dr, clueCol = col - dc;
+    if (clueRow < 0 || clueCol < 0) return best;
+    const endRow = row + dr * (length - 1), endCol = col + dc * (length - 1);
+    if (endRow >= rows || endCol >= cols) return best;
+    const clue = clueRow * cols + clueCol;
+    if (isLetter(grid[clue]) || (direction === 'across' ? clueAcross[clue] : clueDown[clue])) return best;
+    const afterRow = endRow + dr, afterCol = endCol + dc;
+    if (afterRow < rows && afterCol < cols && isLetter(grid[afterRow * cols + afterCol])) return best;
+    const fixed: number[] = [];
+    let fresh = 0, loose = 0;
+    for (let i = 0; i < length; i++) {
+      const r = row + dr * i, c = col + dc * i, cell = r * cols + c, value = grid[cell];
+      if (value === '#') return best;
+      if (value !== '') {
+        if (direction === 'across' ? usedAcross[cell] : usedDown[cell]) return best;
+        fixed.push(i);
+      } else {
+        fresh++;
+        if ((r - dc >= 0 && c - dr >= 0 && isLetter(grid[(r - dc) * cols + c - dr])) || (r + dc < rows && c + dr < cols && isLetter(grid[(r + dc) * cols + c + dr]))) loose++;
+      }
+    }
+    if (requireCrossing && !fixed.length) return best;
+    let list = byLength.get(length);
+    for (const i of fixed) {
+      const options = byLetter.get(`${length}:${i}:${grid[(row + dr * i) * cols + col + dc * i]}`);
+      if (!options) return best;
+      if (!list || options.length < list.length) list = options;
+    }
+    if (!list) return best;
+    for (const index of list) {
+      const candidate = pool[index], answer = candidate.entry.answer;
+      if (used.has(answer)) continue;
+      let matches = true;
+      for (const i of fixed) if (answer[i] !== grid[(row + dr * i) * cols + col + dc * i]) { matches = false; break; }
+      if (!matches) continue;
+      const score = fixed.length * 40 + fresh * 2 - loose * 3 + (selectedIds.includes(candidate.theme.id) ? 8 : 0)
+        - Math.abs(candidate.entry.difficulty - rules.difficulty) * 6 + (grid[clue] === '#' ? 3 : 0) + random() * 6;
+      if (!best || score > best.score) best = { candidate: index, row, col, direction, score };
+    }
+    return best;
+  }
+
+  function place(pick: MagazinePick): void {
+    const answer = pool[pick.candidate].entry.answer;
+    const dr = pick.direction === 'down' ? 1 : 0, dc = pick.direction === 'across' ? 1 : 0;
+    const clue = (pick.row - dr) * cols + pick.col - dc;
+    grid[clue] = '#';
+    if (pick.direction === 'across') clueAcross[clue] = true; else clueDown[clue] = true;
+    for (let i = 0; i < answer.length; i++) {
+      const cell = (pick.row + dr * i) * cols + pick.col + dc * i;
+      grid[cell] = answer[i];
+      if (pick.direction === 'across') usedAcross[cell] = true; else usedDown[cell] = true;
+    }
+    const afterRow = pick.row + dr * answer.length, afterCol = pick.col + dc * answer.length;
+    if (afterRow < rows && afterCol < cols) grid[afterRow * cols + afterCol] = '#';
+    placed.push(pick);
+    used.add(answer);
+  }
+
+  const limit = 100;
+  while (placed.length < limit) {
+    let best: MagazinePick | null = null;
+    for (const direction of ['across', 'down'] as const) {
+      for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
+        for (let length = 3; length <= maxLength; length++) best = evaluate(row, col, direction, length, best, placed.length > 0);
+      }
+    }
+    if (best) { place(best); continue; }
+    const empty = grid.indexOf('');
+    if (empty < 0) break;
+    const row = Math.floor(empty / cols), col = empty % cols;
+    for (const direction of ['across', 'down'] as const) {
+      for (let length = 3; length <= maxLength; length++) {
+        for (let offset = 0; offset < length; offset++) {
+          best = evaluate(row - (direction === 'down' ? offset : 0), col - (direction === 'across' ? offset : 0), direction, length, best, false);
+        }
+      }
+    }
+    if (best) place(best); else grid[empty] = '#';
+  }
+  if (grid.includes('')) return null;
+  const letters = grid.filter(isLetter).length;
+  if (letters < size * 0.6) return null;
+  const words = placed.map(pick => toWord(pool[pick.candidate], pick.row, pick.col, pick.direction));
+  words.sort((a, b) => a.row - b.row || a.col - b.col || a.direction.localeCompare(b.direction));
+  return words.map((word, index) => ({ ...word, number: index + 1 }));
+}
+
+function magazineQuality(words: PuzzleWord[]): number {
+  const owners = new Map<string, number>();
+  for (const word of words) for (const cell of wordCells(word)) owners.set(cell.key, (owners.get(cell.key) ?? 0) + 1);
+  const clues = new Set(words.map(word => clueCell(word).key));
+  const blank = MAGAZINE_ROWS * MAGAZINE_COLS - owners.size - clues.size;
+  let crossed = 0;
+  for (const count of owners.values()) if (count > 1) crossed++;
+  return owners.size + crossed * 2 - blank * 3;
+}
+
 export function generatePuzzle(seed: string, mode: Mode, level: number, themeIds?: string[]): Puzzle {
   validateLevel(level);
   const selected = themeIds ? themeIds.map(id => themes.find(theme => theme.id === id)) : drawThemes(seed, mode, level);
@@ -247,17 +389,26 @@ export function generatePuzzle(seed: string, mode: Mode, level: number, themeIds
   let words: PuzzleWord[] | null = null;
   for (let attempt = 0; attempt < 36 && !words; attempt++) {
     const random = rng(`${seed}:${mode}:${level}:${chosen.map(theme => theme.id).join(',')}:${attempt}`);
+    if (mode === 'magazine') {
+      // Several cheap fills; keep the most packed and best crossed frame.
+      for (let fill = 0; fill < 8; fill++) {
+        const candidate = magazine(magazinePool(random, level), chosen, level, random);
+        if (candidate && (!words || magazineQuality(candidate) > magazineQuality(words))) words = candidate;
+      }
+      continue;
+    }
     const pool = candidatePool(chosen, random, mode, level);
     words = mode !== 'cascade' ? crossword(pool, chosen, count, level, random) : cascade(pool, chosen, count, level, random);
   }
   if (!words) throw new Error('Não foi possível montar esta grade. Sorteie novos temas.');
-  if (mode === 'magazine') words = words.map(word => ({ ...word, row: word.row + 1, col: word.col + 1 }));
   const cells = words.flatMap(wordCells);
+  // The magazine draws from the whole catalog to pack its frame; the five drawn themes lead.
+  const puzzleThemes = mode === 'magazine' ? [...new Set([...chosen.map(theme => theme.id), ...words.map(word => word.themeId)])] : chosen.map(theme => theme.id);
   return {
     id: `${mode}:${level}:${seed}:${chosen.map(theme => theme.id).join('.')}`,
-    mode, level, themeIds: chosen.map(theme => theme.id), words,
-    rows: Math.max(...cells.map(cell => cell.row)) + 1,
-    cols: Math.max(...cells.map(cell => cell.col)) + 1,
+    mode, level, themeIds: puzzleThemes, words,
+    rows: mode === 'magazine' ? MAGAZINE_ROWS : Math.max(...cells.map(cell => cell.row)) + 1,
+    cols: mode === 'magazine' ? MAGAZINE_COLS : Math.max(...cells.map(cell => cell.col)) + 1,
     difficulty: level <= 10 ? 'Primeiras conexões' : level <= 20 ? 'Iniciante' : level <= 40 ? 'Aprendiz' : level <= 60 ? 'Intermediário' : level <= 80 ? 'Avançado' : 'Especialista',
   };
 }

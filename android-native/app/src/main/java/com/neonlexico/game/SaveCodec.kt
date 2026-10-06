@@ -19,8 +19,8 @@ object SaveCodec {
     fun puzzleJson(p: Puzzle): JSONObject = JSONObject().put("id",p.id).put("mode",p.mode.wire).put("level",p.level).put("themeIds",JSONArray(p.themeIds)).put("words",JSONArray(p.words.map { w -> JSONObject().put("id",w.id).put("answer",w.answer).put("clue",w.clue).put("difficulty",w.difficulty).put("themeId",w.themeId).put("themeName",w.themeName).put("row",w.row).put("col",w.col).put("direction",w.direction).put("number",w.number) })).put("rows",p.rows).put("cols",p.cols).put("difficulty",p.difficulty)
     private fun puzzle(obj: JSONObject): Puzzle {
         keys(obj,setOf("id","mode","level","themeIds","words","rows","cols","difficulty"))
-        val mode=Mode.fromWire(obj.getString("mode"));val level=integer(obj,"level",1,100);val themes=strings(obj.getJSONArray("themeIds"),5);require(themes.size==5)
-        val rows=integer(obj,"rows",1,64);val cols=integer(obj,"cols",1,64);val array=obj.getJSONArray("words");require(array.length() in 1..40)
+        val mode=Mode.fromWire(obj.getString("mode"));val level=integer(obj,"level",1,100);val themes=strings(obj.getJSONArray("themeIds"),if(mode==Mode.MAGAZINE) 64 else 5);require(if(mode==Mode.MAGAZINE) themes.size>=5 else themes.size==5)
+        val rows=integer(obj,"rows",1,64);val cols=integer(obj,"cols",1,64);val array=obj.getJSONArray("words");require(array.length() in 1..100)
         val words=(0 until array.length()).map { i ->
             val w=array.getJSONObject(i);keys(w,setOf("id","answer","clue","difficulty","themeId","themeName","row","col","direction","number"))
             val answer=text(w,"answer",40);require(answer.matches(Regex("[A-Z]+")));val themeId=identifier(w,"themeId");require(themeId in themes)

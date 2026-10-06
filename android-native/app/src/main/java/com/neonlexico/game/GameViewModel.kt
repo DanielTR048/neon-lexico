@@ -61,36 +61,70 @@ class GameViewModel(application: Application): AndroidViewModel(application) {
             beginning=false
             if(generation!=selectedGeneration||state.activeProfileId!=id||state.screen!=Screen.SETUP||state.mode!=context.mode||state.level!=context.level||state.save.seed!=context.save.seed||state.selectedThemes!=context.selectedThemes) return@launch
             result.onSuccess { session ->
-                state=state.copy(save=state.save.copy(sessions=state.save.sessions+("${state.mode.wire}:${state.level}" to session)),screen=Screen.PLAY,activeWordId=session.puzzle.words.first().id,cursor=0);revision++;persist()
+                state=state.copy(save=state.save.copy(sessions=state.save.sessions+("${state.mode.wire}:${state.level}" to session)),screen=Screen.PLAY,activeWordId=session.puzzle.words.first().id,cursor=startCursor(session,session.puzzle.words.first()));revision++;persist()
             }.onFailure { state=state.copy(error="O sinal falhou. Sorteie outros temas e tente novamente.") }
         }
     }
+    /** First square the player can still type into: empty first, then any square that is not unlocked. */
+    private fun startCursor(session: Session,word: PuzzleWord): Int {
+        val cells=Engine.wordCells(word)
+        val empty=cells.indexOfFirst { it.key !in session.revealed&&session.values[it.key].isNullOrEmpty() }
+        return if(empty>=0) empty else cells.indexOfFirst { it.key !in session.revealed }.coerceAtLeast(0)
+    }
     fun selectWord(id: String,cell: String?=null) {
         val session=state.session?:return;val word=session.puzzle.words.firstOrNull { it.id==id }?:return
-        val cells=Engine.wordCells(word)
-        val cursor=if(cell!=null) cells.indexOfFirst { it.key==cell }.coerceAtLeast(0) else cells.indexOfFirst { session.values[it.key].isNullOrEmpty() }.coerceAtLeast(0)
+        val cursor=if(cell!=null) Engine.wordCells(word).indexOfFirst { it.key==cell }.coerceAtLeast(0) else startCursor(session,word)
         state=state.copy(activeWordId=id,cursor=cursor)
     }
-    fun updateGridDraft(value: String,nextCursor: Int) {
-        val session=state.session?:return;val word=session.puzzle.words.firstOrNull { it.id==state.activeWordId }?:return
-        if(session.completed||word.id in session.solved)return
-        val values=session.values.toMutableMap()
-        Engine.wordCells(word).forEachIndexed { index,cell ->
-            if(cell.key !in session.revealed) {
-                val letter=Engine.normalizeAnswer(value.getOrNull(index)?.toString().orEmpty())
-                if(letter.isEmpty())values.remove(cell.key) else values[cell.key]=letter
-            }
-        }
-        writeGridValues(session,values,nextCursor.coerceIn(0,word.answer.lastIndex))
+    private fun activeWord(): Pair<Session,PuzzleWord>? {
+        if(state.activeProfileId==null||state.screen!=Screen.PLAY) return null
+        val session=state.session?:return null;val word=session.puzzle.words.firstOrNull { it.id==state.activeWordId }?:return null
+        if(session.completed||word.id in session.solved) return null
+        return session to word
+    }
+    /**
+     * In-app keyboard. Unlocked letters (cascade, hints, solved crossings) are never typed over: the
+     * letter goes to the next editable square, so a player who skips a given letter keeps alignment.
+     */
+    fun typeLetter(letter: Char) {
+        val (session,word)=activeWord()?:return
+        val value=Engine.normalizeAnswer(letter.toString()).takeIf { it.length==1 }?:return
+        val cells=Engine.wordCells(word);var index=state.cursor.coerceIn(cells.indices)
+        while(index<cells.size&&cells[index].key in session.revealed) index++
+        if(index>=cells.size) return
+        var next=index+1
+        while(next<cells.size&&cells[next].key in session.revealed) next++
+        writeGridValues(session,session.values+(cells[index].key to value),if(next<cells.size) next else index)
+        if(state.mode==Mode.MAGAZINE&&next>=cells.size&&cells.all { !state.session!!.values[it.key].isNullOrEmpty() }) nextWord()
     }
     fun eraseGridCell() {
-        val session=state.session?:return;val word=session.puzzle.words.firstOrNull { it.id==state.activeWordId }?:return
-        if(session.completed||word.id in session.solved)return
+        val (session,word)=activeWord()?:return
         val cells=Engine.wordCells(word);var index=state.cursor.coerceIn(cells.indices)
-        if(session.values[cells[index].key].isNullOrEmpty()||cells[index].key in session.revealed)index--
-        while(index>=0&&cells[index].key in session.revealed)index--
-        if(index<0)return
+        if(session.values[cells[index].key].isNullOrEmpty()||cells[index].key in session.revealed) index--
+        while(index>=0&&cells[index].key in session.revealed) index--
+        if(index<0) return
         writeGridValues(session,session.values-cells[index].key,index)
+    }
+    /** Switches between the horizontal and vertical answer that share the cursor square. */
+    fun toggleDirection() {
+        val session=state.session?:return;val word=session.puzzle.words.firstOrNull { it.id==state.activeWordId }?:return
+        val key=Engine.wordCells(word).getOrNull(state.cursor)?.key?:return
+        val other=session.puzzle.words.firstOrNull { it.id!=word.id&&Engine.wordCells(it).any { cell -> cell.key==key } }?:return
+        selectWord(other.id,key)
+    }
+    fun previousWord() {
+        val session=state.session?:return
+        val index=session.puzzle.words.indexOfFirst { it.id==state.activeWordId }
+        val ordered=(session.puzzle.words.take(index.coerceAtLeast(0))).reversed()+session.puzzle.words.drop(index.coerceAtLeast(0)).reversed()
+        val previous=ordered.firstOrNull { word -> word.id !in session.solved&&Engine.wordCells(word).any { session.values[it.key].isNullOrEmpty() } }?:ordered.firstOrNull { it.id !in session.solved }?:ordered.firstOrNull()
+        if(previous!=null) selectWord(previous.id)
+    }
+    /** Confirms the active answer straight from the grid squares (Palavras cruzadas and Cascata). */
+    fun confirmWord() {
+        val (session,word)=activeWord()?:return
+        val answer=Engine.wordCells(word).joinToString("") { session.values[it.key].orEmpty() }
+        if(answer.length<word.answer.length) { state=state.copy(error="Complete as ${word.answer.length} letras antes de conectar.");return }
+        submitAnswer(answer)
     }
     private fun writeGridValues(session: Session,values: Map<String,String>,cursor: Int) {
         val next=session.copy(values=values)
@@ -139,7 +173,9 @@ class GameViewModel(application: Application): AndroidViewModel(application) {
     }
     private fun afterChange(session: Session) {
         val word=state.activeWordId.takeIf { id -> session.puzzle.words.any { it.id==id }&&id !in session.solved }?:session.puzzle.words.firstOrNull { it.id !in session.solved }?.id?:state.activeWordId
-        state=state.copy(save=Engine.recordCompletion(state.save,session),activeWordId=word);revision++;persist()
+        // A solved answer hands over to another word: its typing starts at that word's first open square.
+        val cursor=if(word!=state.activeWordId) session.puzzle.words.firstOrNull { it.id==word }?.let { startCursor(session,it) }?:0 else state.cursor
+        state=state.copy(save=Engine.recordCompletion(state.save,session),activeWordId=word,cursor=cursor);revision++;persist()
     }
     fun toggleSound() { state=state.copy(save=state.save.copy(settings=state.save.settings.copy(sound=!state.save.settings.sound)));revision++;persist() }
     fun toggleMotion() { state=state.copy(save=state.save.copy(settings=state.save.settings.copy(reducedMotion=!state.save.settings.reducedMotion)));revision++;persist() }

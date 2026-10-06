@@ -8,7 +8,7 @@ Palavras cruzadas em português com visual cyberpunk, grades de revista e aplica
 
 São 300 fases: 100 de Palavras cruzadas, 100 de Clássico e 100 de Efeito cascata. Cada fase sorteia cinco temas de um catálogo de 44 temas. Nas primeiras fases, as pistas são diretas e as palavras têm até seis letras. Conforme você avança, entram palavras mais longas, assuntos mais difíceis e tabuleiros maiores: os dois modos de cruzadas crescem de 12 a 30 respostas; Cascata de 5 a 14 linhas.
 
-Em Palavras cruzadas, selecione uma pista ou toque na grade numerada, digite a resposta e confirme. As casas compartilhadas mostram a mesma letra nas duas palavras. No novo Clássico, as pistas ficam dentro das casas cinza, com setas horizontais e verticais, em uma grade de revista. As letras ficam livres para edição e a conferência só libera quando toda a grade está preenchida. Se houver algum erro, o jogo pede para revisar sem identificar casas ou palavras erradas. Na Cascata, letras de uma resposta correta aparecem em todas as linhas abaixo.
+Em Palavras cruzadas, selecione uma pista ou toque na grade numerada, digite a resposta e confirme. As casas compartilhadas mostram a mesma letra nas duas palavras. No Clássico, as pistas ficam dentro das casas cinza, com setas horizontais e verticais, em uma grade de revista de tamanho fixo (10 × 13) totalmente preenchida com palavras de todo o catálogo; os cinco temas sorteados têm prioridade, e a dificuldade das palavras sobe com as fases. As letras ficam livres para edição e a conferência só libera quando toda a grade está preenchida. Se houver algum erro, o jogo pede para revisar sem identificar casas ou palavras erradas. Na Cascata, letras de uma resposta correta aparecem em todas as linhas abaixo.
 
 Nos três modos, toque na casa e digite diretamente na grade, sem outro campo de resposta. O cursor começa na casa escolhida e avança conforme você escreve. No celular, a pista selecionada permanece abaixo da grade e acima do teclado; tocar novamente em um cruzamento alterna entre horizontal e vertical. Use a seta para recolher o teclado e explorar o tabuleiro. Esse fluxo também está disponível no aplicativo Android.
 
@@ -26,7 +26,7 @@ O jogo salva localmente mesmo offline. Com conexão, envia as alterações e bus
 
 ## Android e offline
 
-O APK é um aplicativo Kotlin/Jetpack Compose, com interface e motor nativos. A versão 1.1.0 inclui os três modos. Para atualizar, baixe pelo botão da seleção de perfis e instale sobre a versão anterior, sem desinstalar: os perfis e o progresso permanecem. O Android pode pedir autorização para instalar aplicativos pelo navegador. O download não instala automaticamente.
+O APK é um aplicativo Kotlin/Jetpack Compose, com interface e motor nativos. A versão 1.2.0 mostra o tabuleiro inteiro na tela (pinça ou botão ZOOM para ampliar) e usa um teclado próprio do jogo, sem abrir o teclado do celular sobre a grade. Letras já desbloqueadas são puladas ao digitar. Para atualizar, baixe pelo botão da seleção de perfis e instale sobre a versão anterior, sem desinstalar: os perfis e o progresso permanecem. O Android pode pedir autorização para instalar aplicativos pelo navegador. O download não instala automaticamente.
 
 A versão web também funciona offline após uma primeira abertura online completa. No Android, pode ser instalada como PWA pelo navegador; no iPhone, use Compartilhar → Adicionar à Tela de Início. A instalação nativa é detalhada em [android-native/README.md](android-native/README.md).
 

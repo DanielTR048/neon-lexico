@@ -31,15 +31,19 @@ class DomainTest {
     @Test fun allTwoHundredLevelsHaveValidCrossingsAndGradualSizes() {
         for(mode in Mode.entries) for(level in 1..100) {
             val puzzle=engine.generatePuzzle("test-seed",mode,level);val rules=Engine.phaseRules(mode,level)
-            assertEquals(rules.count,puzzle.words.size);assertEquals(5,puzzle.words.map { it.themeId }.distinct().size)
+            if(mode==Mode.MAGAZINE) { assertEquals(Engine.MAGAZINE_ROWS,puzzle.rows);assertEquals(Engine.MAGAZINE_COLS,puzzle.cols);assertTrue(puzzle.words.all { it.themeId in puzzle.themeIds }) }
+            else { assertEquals(rules.count,puzzle.words.size);assertEquals(5,puzzle.words.map { it.themeId }.distinct().size) }
             val solution=mutableMapOf<String,Char>()
             for(word in puzzle.words) {
                 assertTrue(word.answer.length<=rules.maxLength)
-                if(level<=20) { assertEquals(1,word.difficulty);assertTrue(word.themeId in Engine.BEGINNER_THEME_IDS) }
+                if(level<=20) { assertEquals(1,word.difficulty);if(mode!=Mode.MAGAZINE) assertTrue(word.themeId in Engine.BEGINNER_THEME_IDS) }
                 Engine.wordCells(word).forEachIndexed { index,cell -> assertTrue(cell.row in 0 until puzzle.rows);assertTrue(cell.col in 0 until puzzle.cols);assertTrue(solution[cell.key]==null||solution[cell.key]==word.answer[index]);solution[cell.key]=word.answer[index] }
             }
             if(mode==Mode.CLASSIC) { assertTrue(puzzle.words.any { it.direction=="across" });assertTrue(puzzle.words.any { it.direction=="down" });assertTrue(puzzle.rows<=28&&puzzle.cols<=28) }
-            if(mode==Mode.MAGAZINE) for(word in puzzle.words) { val clue=Engine.clueCell(word);assertTrue(clue.row in 0 until puzzle.rows&&clue.col in 0 until puzzle.cols);assertFalse(solution.containsKey(clue.key)) }
+            if(mode==Mode.MAGAZINE) {
+                for(word in puzzle.words) { val clue=Engine.clueCell(word);assertTrue(clue.row in 0 until puzzle.rows&&clue.col in 0 until puzzle.cols);assertFalse(solution.containsKey(clue.key)) }
+                assertTrue("packed frame $level",solution.size>=puzzle.rows*puzzle.cols*.6)
+            }
         }
         assertEquals(12,Engine.phaseRules(Mode.CLASSIC,1).count);assertEquals(30,Engine.phaseRules(Mode.CLASSIC,100).count)
         assertEquals(5,Engine.phaseRules(Mode.CASCADE,1).count);assertEquals(14,Engine.phaseRules(Mode.CASCADE,100).count)
@@ -52,6 +56,8 @@ class DomainTest {
         else listOf(PuzzleWord("a","CASA","Moradia",1,"t","Tema",0,0,"across",1),PuzzleWord("b","COPO","Recipiente",1,"t","Tema",0,0,"down",1))
         return Session(Puzzle("handmade",mode,1,listOf("t"),words,4,4,"Primeiras conexões"))
     }
+    /** Persisted saves need the five theme ids the codec requires. */
+    private fun saved(mode: Mode)=handmade(mode).let { it.copy(puzzle=it.puzzle.copy(themeIds=listOf("t","t2","t3","t4","t5"))) }
     @Test fun partialCascadeHintImmediatelyRevealsEveryLowerOccurrence() {
         val before=handmade(Mode.CASCADE);val hinted=Engine.useHint(before,"a")
         assertEquals(1,hinted.hints);assertEquals("C",hinted.values["0:0"]);assertEquals("C",hinted.values["2:2"]);assertEquals("C",hinted.revealed["2:2"])
@@ -140,12 +146,38 @@ class DomainTest {
         repository.save("daniel",SaveData(seed="native-middle-draft",sessions=mapOf("magazine:1" to Session(puzzle))))
         val model=GameViewModel(app);model.selectProfile("daniel");model.prepare(Mode.MAGAZINE,1)
         val word=puzzle.words.first { it.answer.length>=4 };val cells=Engine.wordCells(word)
-        model.selectWord(word.id,cells[2].key)
-        val text=CharArray(word.answer.length) { ' ' }.apply { this[2]='Z' }.concatToString()
-        model.updateGridDraft(text,3)
-        assertEquals("Z",model.state.session!!.values[cells[2].key]);assertNull(model.state.session!!.values[cells[0].key])
+        model.selectWord(word.id,cells[2].key);model.typeLetter('z')
+        assertEquals("Z",model.state.session!!.values[cells[2].key]);assertNull(model.state.session!!.values[cells[0].key]);assertEquals(3,model.state.cursor)
         val before=model.state.session!!.values;model.nextWord()
         assertEquals(before,model.state.session!!.values)
         model.onBackground();assertEquals(before,GameRepository(app).load("daniel").sessions.getValue("magazine:1").values)
+    }
+    @Test fun cascadeTypingStartsOnTheNextLineAndSkipsUnlockedLetters() {
+        val session=saved(Mode.CASCADE)
+        repository.save("daniel",SaveData(seed="native-cascade-typing",sessions=mapOf("cascade:1" to session)))
+        val model=GameViewModel(app);model.selectProfile("daniel");model.prepare(Mode.CASCADE,1)
+        assertEquals("a",model.state.activeWordId)
+        "CASA".forEach(model::typeLetter);assertEquals(3,model.state.cursor);model.confirmWord()
+        // CASA unlocks every C, A and S below: ASA solves itself and ARCO keeps only R and O open.
+        val solved=model.state.session!!
+        assertEquals(listOf("a","b"),solved.solved);assertEquals("c",model.state.activeWordId);assertEquals(1,model.state.cursor)
+        model.typeLetter('R');assertEquals(3,model.state.cursor);model.typeLetter('O')
+        assertEquals("ARCO",Engine.wordCells(solved.puzzle.words[2]).joinToString("") { model.state.session!!.values[it.key].orEmpty() })
+        model.confirmWord();assertTrue(model.state.session!!.completed);assertEquals(0,model.state.session!!.mistakes)
+    }
+    @Test fun typingNeverOverwritesALetterUnlockedByAHint() {
+        repository.save("daniel",SaveData(seed="native-hint-typing",sessions=mapOf("classic:1" to saved(Mode.CLASSIC))))
+        val reopened=GameViewModel(app);reopened.selectProfile("daniel");reopened.prepare(Mode.CLASSIC,1);reopened.selectWord("a")
+        reopened.hint();assertEquals("C",reopened.state.session!!.revealed["0:0"])
+        reopened.selectWord("a","0:0");reopened.typeLetter('Z')
+        assertEquals("C",reopened.state.session!!.values["0:0"]);assertEquals("Z",reopened.state.session!!.values["0:1"])
+        reopened.eraseGridCell();assertNull(reopened.state.session!!.values["0:1"]);assertEquals("C",reopened.state.session!!.values["0:0"])
+        reopened.selectWord("a","0:0");reopened.toggleDirection();assertEquals("b",reopened.state.activeWordId)
+    }
+    @Test fun confirmingAnIncompleteAnswerAsksForTheMissingLettersWithoutAMistake() {
+        repository.save("daniel",SaveData(seed="native-incomplete",sessions=mapOf("classic:1" to saved(Mode.CLASSIC))))
+        val model=GameViewModel(app);model.selectProfile("daniel");model.prepare(Mode.CLASSIC,1);model.selectWord("a")
+        model.typeLetter('C');model.confirmWord()
+        assertEquals(0,model.state.session!!.mistakes);assertNotNull(model.state.error)
     }
 }

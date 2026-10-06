@@ -79,11 +79,12 @@ function puzzleFrom(value: unknown): Puzzle {
   if (!MODES.includes(source.mode as Mode)) invalid('modo');
   const mode = source.mode as Mode;
   const level = number(source.level, 'número da fase', 1, 100);
-  const themeIds = stringList(source.themeIds, 'temas', 5);
-  if (themeIds.length !== 5) invalid('a fase deve ter cinco temas');
+  // Magazine frames draw from the whole catalog: the five drawn themes first, then any other used.
+  const themeIds = stringList(source.themeIds, 'temas', mode === 'magazine' ? 64 : 5);
+  if (mode === 'magazine' ? themeIds.length < 5 : themeIds.length !== 5) invalid('a fase deve ter cinco temas');
   const rows = number(source.rows, 'linhas', 1, 64);
   const cols = number(source.cols, 'colunas', 1, 64);
-  if (!Array.isArray(source.words) || source.words.length < 1 || source.words.length > 40) invalid('palavras');
+  if (!Array.isArray(source.words) || source.words.length < 1 || source.words.length > 100) invalid('palavras');
   const words: PuzzleWord[] = source.words.map(item => {
     const word = object(item, 'palavra');
     exactKeys(word, ['id', 'answer', 'clue', 'difficulty', 'themeId', 'themeName', 'row', 'col', 'direction', 'number'], 'campos da palavra');

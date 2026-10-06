@@ -104,6 +104,100 @@ class Engine(val themes: List<Theme>) {
         }
         return words.takeIf { covered.size == 5 }
     }
+    private class MagazinePick(val candidate: Int, val row: Int, val col: Int, val direction: String, val score: Double)
+    /** Mirrors the browser arrowword fill: crossing placements first, then every empty square is covered or blocked. */
+    private fun magazine(pool: List<Candidate>, selected: List<Theme>, level: Int, random: Random): List<PuzzleWord>? {
+        val rows = MAGAZINE_ROWS; val cols = MAGAZINE_COLS; val size = rows * cols
+        val rules = phaseRules(Mode.MAGAZINE, level); val maxLength = min(rules.maxLength, max(rows, cols) - 1)
+        val grid = Array(size) { "" }; val usedAcross = BooleanArray(size); val usedDown = BooleanArray(size); val clueAcross = BooleanArray(size); val clueDown = BooleanArray(size)
+        val selectedIds = selected.map { it.id }; val placed = mutableListOf<MagazinePick>(); val used = mutableSetOf<String>()
+        val byLength = HashMap<Int, MutableList<Int>>(); val byLetter = HashMap<String, MutableList<Int>>()
+        pool.forEachIndexed { index, candidate ->
+            val answer = candidate.entry.answer
+            byLength.getOrPut(answer.length) { mutableListOf() } += index
+            for (position in answer.indices) byLetter.getOrPut("${answer.length}:$position:${answer[position]}") { mutableListOf() } += index
+        }
+        grid[0] = "#"
+        fun isLetter(value: String) = value != "" && value != "#"
+        fun evaluate(row: Int, col: Int, direction: String, length: Int, current: MagazinePick?, requireCrossing: Boolean): MagazinePick? {
+            var best = current
+            val dr = if (direction == "down") 1 else 0; val dc = if (direction == "across") 1 else 0
+            val clueRow = row - dr; val clueCol = col - dc
+            if (clueRow < 0 || clueCol < 0) return best
+            val endRow = row + dr * (length - 1); val endCol = col + dc * (length - 1)
+            if (endRow >= rows || endCol >= cols) return best
+            val clue = clueRow * cols + clueCol
+            if (isLetter(grid[clue]) || (if (direction == "across") clueAcross[clue] else clueDown[clue])) return best
+            val afterRow = endRow + dr; val afterCol = endCol + dc
+            if (afterRow < rows && afterCol < cols && isLetter(grid[afterRow * cols + afterCol])) return best
+            val fixed = mutableListOf<Int>(); var fresh = 0; var loose = 0
+            for (i in 0 until length) {
+                val r = row + dr * i; val c = col + dc * i; val cell = r * cols + c; val value = grid[cell]
+                if (value == "#") return best
+                if (value != "") {
+                    if (if (direction == "across") usedAcross[cell] else usedDown[cell]) return best
+                    fixed += i
+                } else {
+                    fresh++
+                    if ((r - dc >= 0 && c - dr >= 0 && isLetter(grid[(r - dc) * cols + c - dr])) || (r + dc < rows && c + dr < cols && isLetter(grid[(r + dc) * cols + c + dr]))) loose++
+                }
+            }
+            if (requireCrossing && fixed.isEmpty()) return best
+            var list: List<Int>? = byLength[length]
+            for (i in fixed) {
+                val options = byLetter["$length:$i:${grid[(row + dr * i) * cols + col + dc * i]}"] ?: return best
+                if (list == null || options.size < list.size) list = options
+            }
+            for (index in list ?: return best) {
+                val candidate = pool[index]; val answer = candidate.entry.answer
+                if (answer in used) continue
+                if (fixed.any { i -> answer[i].toString() != grid[(row + dr * i) * cols + col + dc * i] }) continue
+                val score = fixed.size * 40.0 + fresh * 2 - loose * 3 + (if (candidate.theme.id in selectedIds) 8 else 0) - abs(candidate.entry.difficulty - rules.difficulty) * 6 + (if (grid[clue] == "#") 3 else 0) + random.next() * 6
+                if (best == null || score > best.score) best = MagazinePick(index, row, col, direction, score)
+            }
+            return best
+        }
+        fun place(pick: MagazinePick) {
+            val answer = pool[pick.candidate].entry.answer
+            val dr = if (pick.direction == "down") 1 else 0; val dc = if (pick.direction == "across") 1 else 0
+            val clue = (pick.row - dr) * cols + pick.col - dc
+            grid[clue] = "#"; if (pick.direction == "across") clueAcross[clue] = true else clueDown[clue] = true
+            for (i in answer.indices) {
+                val cell = (pick.row + dr * i) * cols + pick.col + dc * i
+                grid[cell] = answer[i].toString(); if (pick.direction == "across") usedAcross[cell] = true else usedDown[cell] = true
+            }
+            val afterRow = pick.row + dr * answer.length; val afterCol = pick.col + dc * answer.length
+            if (afterRow < rows && afterCol < cols) grid[afterRow * cols + afterCol] = "#"
+            placed += pick; used += answer
+        }
+        while (placed.size < 100) {
+            var best: MagazinePick? = null
+            for (direction in listOf("across", "down")) for (row in 0 until rows) for (col in 0 until cols) for (length in 3..maxLength) best = evaluate(row, col, direction, length, best, placed.isNotEmpty())
+            if (best != null) { place(best); continue }
+            val empty = grid.indexOf("")
+            if (empty < 0) break
+            val row = empty / cols; val col = empty % cols
+            for (direction in listOf("across", "down")) for (length in 3..maxLength) for (offset in 0 until length) best = evaluate(row - if (direction == "down") offset else 0, col - if (direction == "across") offset else 0, direction, length, best, false)
+            if (best != null) place(best) else grid[empty] = "#"
+        }
+        if ("" in grid) return null
+        if (grid.count(::isLetter) < size * 0.6) return null
+        return placed.map { toWord(pool[it.candidate], it.row, it.col, it.direction) }
+            .sortedWith(compareBy<PuzzleWord> { it.row }.thenBy { it.col }.thenBy { it.direction })
+            .mapIndexed { index, word -> word.copy(number = index + 1) }
+    }
+    private fun magazineQuality(words: List<PuzzleWord>): Int {
+        val owners = HashMap<String, Int>(); words.forEach { word -> wordCells(word).forEach { owners[it.key] = (owners[it.key] ?: 0) + 1 } }
+        val clues = words.map { clueCell(it).key }.toSet()
+        val blank = MAGAZINE_ROWS * MAGAZINE_COLS - owners.size - clues.size
+        return owners.size + owners.values.count { it > 1 } * 2 - blank * 3
+    }
+    /** The magazine needs far more words than five themes hold, so it draws from the whole catalog. */
+    private fun magazinePool(random: Random, level: Int): List<Candidate> {
+        val rules = phaseRules(Mode.MAGAZINE, level)
+        return shuffled(themes.flatMap { t -> t.entries.map { e -> Candidate(e.copy(id = "${t.id}:${e.id}", answer = normalizeAnswer(e.answer)), t) } }
+            .filter { it.entry.answer.length in 3..rules.maxLength && (level > 20 || it.entry.difficulty == 1) && (level > 60 || it.entry.difficulty <= 2) }, random)
+    }
     fun generatePuzzle(seed: String, mode: Mode, level: Int, themeIds: List<String>? = null): Puzzle {
         require(level in 1..100)
         val chosen = themeIds?.map { id -> themes.first { it.id == id } } ?: drawThemes(seed,mode,level)
@@ -111,17 +205,26 @@ class Engine(val themes: List<Theme>) {
         val rules=phaseRules(mode,level);val count = rules.count; var words: List<PuzzleWord>? = null
         for (attempt in 0 until 36) {
             val random = Random("$seed:${mode.wire}:$level:${chosen.joinToString(",") { it.id }}:$attempt")
+            if (mode == Mode.MAGAZINE) {
+                // Several cheap fills; keep the most packed and best crossed frame.
+                repeat(8) { magazine(magazinePool(random,level),chosen,level,random)?.let { candidate -> val current=words;if (current == null || magazineQuality(candidate) > magazineQuality(current)) words = candidate } }
+                if (words != null) break else continue
+            }
             val pool = shuffled(chosen.flatMap { t -> t.entries.map { e -> Candidate(e.copy(id="${t.id}:${e.id}",answer=normalizeAnswer(e.answer)),t) } }.filter { it.entry.answer.length in 3..rules.maxLength&&(level>20||it.entry.difficulty==1) },random)
             words = if (mode != Mode.CASCADE) crossword(pool,chosen,count,level,random) else cascade(pool,chosen,count,level,random)
             if (words != null) break
         }
-        val generated = words ?: error("Não foi possível montar esta grade. Sorteie novos temas.")
-        val found = if (mode == Mode.MAGAZINE) generated.map { it.copy(row=it.row+1,col=it.col+1) } else generated
+        val found = words ?: error("Não foi possível montar esta grade. Sorteie novos temas.")
         val cells = found.flatMap(::wordCells)
-        return Puzzle("${mode.wire}:$level:$seed:${chosen.joinToString(".") { it.id }}",mode,level,chosen.map { it.id },found,cells.maxOf { it.row }+1,cells.maxOf { it.col }+1,if(level<=10) "Primeiras conexões" else if(level<=20) "Iniciante" else if(level<=40) "Aprendiz" else if(level<=60) "Intermediário" else if(level<=80) "Avançado" else "Especialista")
+        // The magazine draws from the whole catalog to pack its frame; the five drawn themes lead.
+        val puzzleThemes = if (mode == Mode.MAGAZINE) (chosen.map { it.id } + found.map { it.themeId }).distinct() else chosen.map { it.id }
+        return Puzzle("${mode.wire}:$level:$seed:${chosen.joinToString(".") { it.id }}",mode,level,puzzleThemes,found,if (mode == Mode.MAGAZINE) MAGAZINE_ROWS else cells.maxOf { it.row }+1,if (mode == Mode.MAGAZINE) MAGAZINE_COLS else cells.maxOf { it.col }+1,if(level<=10) "Primeiras conexões" else if(level<=20) "Iniciante" else if(level<=40) "Aprendiz" else if(level<=60) "Intermediário" else if(level<=80) "Avançado" else "Especialista")
     }
     companion object {
         const val MAX_HINTS=3
+        /** Fixed magazine frame: every phase fills the same portrait grid that fits a phone screen. */
+        const val MAGAZINE_ROWS=13
+        const val MAGAZINE_COLS=10
         val BEGINNER_THEME_IDS=setOf("natureza","gastronomia","anatomia","musica","artes","geografia","astronomia","superpoderes","emocoes","literatura","cinema","portugues")
         data class PhaseRules(val difficulty: Int,val maxLength: Int,val count: Int)
         fun phaseRules(mode: Mode,level: Int): PhaseRules { require(level in 1..100);return PhaseRules(if(level<=20) 1 else if(level<=60) 2 else 3,if(level<=10) 6 else if(level<=20) 8 else if(level<=40) 10 else if(level<=60) 12 else if(level<=80) 15 else 20,if(mode!=Mode.CASCADE) min(30,12+(level-1)/5) else min(14,5+(level-1)/10)) }
